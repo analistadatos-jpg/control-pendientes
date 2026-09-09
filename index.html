@@ -261,21 +261,21 @@
       await cargarArchivosAutomaticos();
     });
 
-    async function descargarYProcesarCSV(urlFile, tipo) {
+    async function obtenerTextoCSV(urlFile) {
       const resp = await fetch(urlFile);
-      if (!resp.ok) throw new Error('No se pudo acceder a ' + urlFile);
+      if (!resp.ok) throw new Error('HTTP status ' + resp.status + ' al descargar ' + urlFile);
       
       const buffer = await resp.arrayBuffer();
-      
-      // Intentar primero con utf-8 y si falla/trae caracteres vacíos, iso-8859-1
+      // Limpiar de posibles BOM (\uFEFF)
       let texto = new TextDecoder('utf-8').decode(buffer);
-      let parsed = parsearCSV(texto, tipo);
+      if (texto.charCodeAt(0) === 0xFEFF) texto = texto.slice(1);
       
-      if (parsed.filas.length === 0) {
+      // Probar si UTF-8 arrojó caracteres raros y reintentar con ISO-8859-1 si aplica
+      if (texto.includes('')) {
         texto = new TextDecoder('iso-8859-1').decode(buffer);
-        parsed = parsearCSV(texto, tipo);
+        if (texto.charCodeAt(0) === 0xFEFF) texto = texto.slice(1);
       }
-      return parsed;
+      return texto;
     }
 
     async function cargarArchivosAutomaticos() {
@@ -283,8 +283,9 @@
       try {
         const timestamp = '?v=' + new Date().getTime();
 
-        // 1. Cargar Reporte de Pendientes
-        const resPend = await descargarYProcesarCSV('./' + encodeURIComponent(ARCHIVO_PENDIENTES) + timestamp, 'pendientes');
+        // 1. Cargar Pendientes
+        const textoPend = await obtenerTextoCSV('./' + encodeURIComponent(ARCHIVO_PENDIENTES) + timestamp);
+        const resPend = parsearCSV(textoPend, 'pendientes');
         cabeceras = resPend.cabeceras;
         datosPendientes = resPend.filas;
 
@@ -295,7 +296,7 @@
           cabeceras.push('Inventario BODEGA PRINCIPAL CEDI');
         }
 
-        // Reaplicar cambios guardados previamente en memoria local (subsanaciones manuales)
+        // Fusionar entregas guardadas en localStorage
         const dataGuardada = localStorage.getItem(STORAGE_KEY);
         if (dataGuardada) {
           try {
@@ -326,12 +327,14 @@
           } catch(e) {}
         }
 
-        // 2. Cargar Inventario de forma síncrona
+        // 2. Cargar Inventario
         try {
-          const resInv = await descargarYProcesarCSV('./' + encodeURIComponent(ARCHIVO_INVENTARIO) + timestamp, 'inventario');
+          const textoInv = await obtenerTextoCSV('./' + encodeURIComponent(ARCHIVO_INVENTARIO) + timestamp);
+          const resInv = parsearCSV(textoInv, 'inventario');
+          console.log('Se leyeron automáticamente ' + resInv.filas.length + ' filas del inventario.csv');
           procesarCruzeInventario(resInv.filas);
         } catch (eInv) {
-          console.warn('Error cargando inventario:', eInv);
+          console.warn('Error al cargar inventario automático:', eInv);
         }
 
         guardarEnLocalStorage();
@@ -339,7 +342,7 @@
         aplicarFiltros();
       } catch (err) {
         document.getElementById('infoContador').textContent = 'Error al sincronizar datos automáticos.';
-        console.error(err);
+        console.error('Error durante la carga inicial:', err);
       }
     }
 
@@ -347,15 +350,20 @@
       const lineas = texto.split(/\r\n|\n/);
       if (lineas.length === 0) return { cabeceras: [], filas: [] };
 
+      // Detección automática del separador
       let separador = ';';
-      let conteoPuntoComa = 0;
-      let conteoComa = 0;
-      
+      let countSemicolon = 0;
+      let countComma = 0;
+      let countTab = 0;
+
       for (let i = 0; i < Math.min(10, lineas.length); i++) {
-        conteoPuntoComa += (lineas[i].match(/;/g) || []).length;
-        conteoComa += (lineas[i].match(/,/g) || []).length;
+        countSemicolon += (lineas[i].match(/;/g) || []).length;
+        countComma += (lineas[i].match(/,/g) || []).length;
+        countTab += (lineas[i].match(/\t/g) || []).length;
       }
-      if (conteoComa > conteoPuntoComa) separador = ',';
+
+      if (countComma > countSemicolon && countComma > countTab) separador = ',';
+      else if (countTab > countSemicolon && countTab > countComma) separador = '\t';
 
       const parseLinea = (linea) => {
         const resultado = [];
@@ -381,27 +389,21 @@
 
       let filaEncabezadoIndex = 0;
       for (let i = 0; i < Math.min(15, lineas.length); i++) {
-        const lineaLower = lineas[i].toLowerCase();
+        const lNorm = normalizarClaveSuperEstricta(lineas[i]);
         if (tipo === 'pendientes') {
-          if (lineaLower.includes('bodega') && (lineaLower.includes('codigo') || lineaLower.includes('código'))) {
+          if (lNorm.includes('bodega') && lNorm.includes('codigo')) {
             filaEncabezadoIndex = i;
             break;
           }
         } else if (tipo === 'inventario') {
-          if (
-            lineaLower.includes('bodega') || 
-            lineaLower.includes('unidades') || 
-            lineaLower.includes('cantidad') || 
-            lineaLower.includes('codigo') || 
-            lineaLower.includes('código')
-          ) {
+          if (lNorm.includes('bodega') || lNorm.includes('unidades') || lNorm.includes('cantidad') || lNorm.includes('codigo') || lNorm.includes('stock')) {
             filaEncabezadoIndex = i;
             break;
           }
         }
       }
 
-      const headers = parseLinea(lineas[filaEncabezadoIndex]);
+      const headers = parseLinea(lineas[filaEncabezadoIndex]).map(h => limpiarValor(h));
       const filas = [];
 
       for (let i = filaEncabezadoIndex + 1; i < lineas.length; i++) {
@@ -426,10 +428,12 @@
     }
 
     function obtenerValorColumna(row, posiblesNombres) {
+      if (!row) return '';
+      const keys = Object.keys(row);
       for (const nombre of posiblesNombres) {
-        if (row.hasOwnProperty(nombre)) return row[nombre];
-        const keyMatch = Object.keys(row).find(k => k.trim().toLowerCase() === nombre.toLowerCase());
-        if (keyMatch) return row[keyMatch];
+        const targetNorm = normalizarClaveSuperEstricta(nombre);
+        const matchKey = keys.find(k => normalizarClaveSuperEstricta(k) === targetNorm);
+        if (matchKey && row[matchKey] !== undefined) return row[matchKey];
       }
       return '';
     }
@@ -524,9 +528,9 @@
       ].map(normalizarClaveSuperEstricta);
 
       filasInventario.forEach(row => {
-        const rawBodega = obtenerValorColumna(row, ['Bodega', 'bodega', 'Nombre Bodega', 'Bodega Encabezado', 'NombreBodega']);
-        const rawCodigo = obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo', 'CodigoArticulo', 'CODIGO', 'Codigo', 'Codigo_Articulo', 'CODIGO ARTICULO']);
-        const rawUnidades = obtenerValorColumna(row, ['Unidades', 'unidades', 'Cantidad', 'Stock', 'Cant', 'CANTIDAD']);
+        const rawBodega = obtenerValorColumna(row, ['Bodega', 'bodega', 'Nombre Bodega', 'Bodega Encabezado', 'NombreBodega', 'BODEGA']);
+        const rawCodigo = obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo', 'CodigoArticulo', 'CODIGO', 'Codigo', 'Codigo_Articulo', 'CODIGO ARTICULO', 'ARTICULO']);
+        const rawUnidades = obtenerValorColumna(row, ['Unidades', 'unidades', 'Cantidad', 'Stock', 'Cant', 'CANTIDAD', 'UNIDADES']);
 
         const bodegaNorm = normalizarClaveSuperEstricta(rawBodega);
         const codigoNorm = normalizarClaveSuperEstricta(rawCodigo);
