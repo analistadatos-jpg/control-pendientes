@@ -267,15 +267,16 @@
     });
 
     async function cargarArchivosAutomaticos() {
-      document.getElementById('infoContador').textContent = 'Cargando archivos CSV desde la nube...';
+      document.getElementById('infoContador').textContent = 'Sincronizando reportes e inventario...';
       try {
         const timestamp = '?v=' + new Date().getTime();
+        const decoder = new TextDecoder('iso-8859-1');
 
+        // 1. Descargar e integrar Reporte Principal de Pendientes
         const respPend = await fetch('./' + encodeURIComponent(ARCHIVO_PENDIENTES) + timestamp);
-        if (!respPend.ok) throw new Error('No se pudo abrir ' + ARCHIVO_PENDIENTES);
+        if (!respPend.ok) throw new Error('No se pudo encontrar ' + ARCHIVO_PENDIENTES);
         
         const bufferPend = await respPend.arrayBuffer();
-        const decoder = new TextDecoder('iso-8859-1');
         const textoPend = decoder.decode(bufferPend);
         
         const resPend = parsearCSV(textoPend);
@@ -289,24 +290,23 @@
           cabeceras.push('Inventario BODEGA PRINCIPAL CEDI');
         }
 
-        try {
-          const respInv = await fetch('./' + encodeURIComponent(ARCHIVO_INVENTARIO) + timestamp);
-          if (respInv.ok) {
-            const bufferInv = await respInv.arrayBuffer();
-            const textoInv = decoder.decode(bufferInv);
-            const resInv = parsearCSV(textoInv);
-            procesarCruzeInventario(resInv.filas);
-          }
-        } catch (eInv) {
-          console.warn('No se pudo cargar el inventario automático:', eInv);
+        // 2. Descargar y realizar cruce AUTOMÁTICO de Inventario
+        const respInv = await fetch('./' + encodeURIComponent(ARCHIVO_INVENTARIO) + timestamp);
+        if (respInv.ok) {
+          const bufferInv = await respInv.arrayBuffer();
+          const textoInv = decoder.decode(bufferInv);
+          const resInv = parsearCSV(textoInv);
+          procesarCruzeInventario(resInv.filas);
+        } else {
+          console.warn('El archivo inventario.csv no devolvió respuesta OK (404/CORS)');
         }
 
         guardarEnLocalStorage();
         poblarSelectoresFiltro();
         aplicarFiltros();
       } catch (err) {
-        document.getElementById('infoContador').textContent = 'Error al cargar datos automáticos. Verifique los archivos CSV en GitHub.';
-        console.error(err);
+        document.getElementById('infoContador').textContent = 'Error al sincronizar datos automáticos. Utilice la carga manual.';
+        console.error('Carga automática interrumpida:', err);
       }
     }
 
@@ -471,9 +471,9 @@
       ];
 
       filasInventario.forEach(row => {
-        const rawBodega = obtenerValorColumna(row, ['Bodega', 'bodega', 'Nombre Bodega']);
-        const rawCodigo = obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo', 'CodigoArticulo', 'CODIGO']);
-        const rawUnidades = obtenerValorColumna(row, ['Unidades', 'unidades', 'Cantidad']);
+        const rawBodega = obtenerValorColumna(row, ['Bodega', 'bodega', 'Nombre Bodega', 'Bodega Encabezado']);
+        const rawCodigo = obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo', 'CodigoArticulo', 'CODIGO', 'Codigo']);
+        const rawUnidades = obtenerValorColumna(row, ['Unidades', 'unidades', 'Cantidad', 'Stock']);
 
         const bodegaNorm = normalizarTextoClave(rawBodega);
         const codigoNorm = normalizarTextoClave(rawCodigo);
