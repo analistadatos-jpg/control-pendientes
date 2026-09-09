@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Control y Subsanación de Pendientes Activos</title>
-  <!-- Librería SheetJS para leer archivos Excel (.xlsx, .xls) -->
+  <!-- SheetJS optimizado para lectura rápida de celdas -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <style>
     :root {
@@ -135,7 +135,7 @@
 </head>
 <body>
 
-  <h1>Control y Subsanación de Pendientes Activos (Sincronizado en Nube ☁️)</h1>
+  <h1>Control y Subsanación de Pendientes Activos (Modo Ultra Rápido ⚡)</h1>
 
   <div class="card">
     <div class="grid-files">
@@ -284,6 +284,15 @@
       'julio': 7, 'agosto': 8, 'septiembre': 9, 'octubre': 10, 'noviembre': 11, 'diciembre': 12
     };
 
+    const cacheNormKeys = new Map();
+    function normalizarClaveSuperEstricta(val) {
+      if (!val) return '';
+      if (cacheNormKeys.has(val)) return cacheNormKeys.get(val);
+      const res = val.toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+      cacheNormKeys.set(val, res);
+      return res;
+    }
+
     window.addEventListener('DOMContentLoaded', async () => {
       await cargarArchivosAutomaticos();
     });
@@ -303,14 +312,6 @@
       return texto;
     }
 
-    function normalizarClaveSuperEstricta(val) {
-      if (!val) return '';
-      return val.toString()
-        .toLowerCase()
-        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-        .replace(/[^a-z0-9]/g, '');
-    }
-
     async function cargarArchivosAutomaticos() {
       document.getElementById('infoContador').textContent = 'Sincronizando reportes e inventario...';
       try {
@@ -321,7 +322,7 @@
 
         try {
           const textoInv = await obtenerTextoCSV('./' + encodeURIComponent(ARCHIVO_INVENTARIO) + timestamp);
-          procesarInventarioFast(textoInv);
+          procesarMatrizInventarioFast(convertirTextoAMatriz(textoInv));
         } catch (eInv) {
           console.warn('Error al cargar inventario automático:', eInv);
         }
@@ -410,26 +411,27 @@
       }
     }
 
+    function convertirTextoAMatriz(textoCSV) {
+      const lineas = textoCSV.split(/\r\n|\n/);
+      if (lineas.length === 0) return [];
+      let separador = textoCSV.includes(';') ? ';' : ',';
+      return lineas.map(linea => linea.split(separador).map(v => v.trim().replace(/^"|"$/g, '')));
+    }
+
     function parsearCSVFast(texto) {
-      const lineas = texto.split(/\r\n|\n/);
-      if (lineas.length === 0) return;
-
-      let separador = texto.includes(';') ? ';' : ',';
-
-      const parseLinea = (linea) => {
-        return linea.split(separador).map(v => v.trim().replace(/^"|"$/g, '').replace(/[\u200B-\u200D\uFEFF]/g, ''));
-      };
+      const matriz = convertirTextoAMatriz(texto);
+      if (matriz.length === 0) return;
 
       let headerIdx = 0;
-      for (let i = 0; i < Math.min(15, lineas.length); i++) {
-        const lNorm = normalizarClaveSuperEstricta(lineas[i]);
+      for (let i = 0; i < Math.min(15, matriz.length); i++) {
+        const lNorm = normalizarClaveSuperEstricta(matriz[i].join(''));
         if (lNorm.includes('bodega') && lNorm.includes('codigo')) {
           headerIdx = i;
           break;
         }
       }
 
-      cabeceras = parseLinea(lineas[headerIdx]);
+      cabeceras = matriz[headerIdx];
       if (!cabeceras.includes('Inventario Disponible en el punto de origen')) {
         cabeceras.push('Inventario Disponible en el punto de origen');
       }
@@ -438,9 +440,9 @@
       }
 
       datosPendientes = [];
-      for (let i = headerIdx + 1; i < lineas.length; i++) {
-        if (!lineas[i].trim()) continue;
-        const vals = parseLinea(lineas[i]);
+      for (let i = headerIdx + 1; i < matriz.length; i++) {
+        const vals = matriz[i];
+        if (!vals || vals.length <= 1) continue;
         const fila = {};
         cabeceras.forEach((col, idx) => {
           fila[col] = vals[idx] !== undefined ? vals[idx] : '';
@@ -455,11 +457,9 @@
       }
     }
 
-    function procesarInventarioFast(textoCSV) {
-      const lineas = textoCSV.split(/\r\n|\n/);
-      if (lineas.length === 0) return;
+    function procesarMatrizInventarioFast(matriz) {
+      if (!matriz || matriz.length === 0) return;
 
-      let separador = textoCSV.includes(';') ? ';' : ',';
       const mapaStockEstandar = new Map();
       const mapaStockNEPS = new Map();
       const mapaStockCEDI = new Map();
@@ -469,8 +469,8 @@
       ].map(normalizarClaveSuperEstricta);
 
       let colCod = 1, colUni = 8, colBod = 13;
-      for (let i = 0; i < Math.min(5, lineas.length); i++) {
-        const cols = lineas[i].split(separador).map(c => normalizarClaveSuperEstricta(c));
+      for (let i = 0; i < Math.min(5, matriz.length); i++) {
+        const cols = matriz[i].map(c => normalizarClaveSuperEstricta(c));
         const cC = cols.findIndex(c => c.includes('codigo'));
         const cU = cols.findIndex(c => c.includes('unidades') || c.includes('stock') || c.includes('cantidad'));
         const cB = cols.findIndex(c => c.includes('bodega'));
@@ -480,17 +480,13 @@
         }
       }
 
-      for (let i = 1; i < lineas.length; i++) {
-        if (!lineas[i].trim()) continue;
-        const cols = lineas[i].split(separador).map(v => v.trim().replace(/^"|"$/g, ''));
-        
-        const rawCod = cols[colCod] || '';
-        const rawUnidades = cols[colUni] || '0';
-        const rawBodega = cols[colBod] || '';
+      for (let i = 1; i < matriz.length; i++) {
+        const cols = matriz[i];
+        if (!cols || cols.length <= 1) continue;
 
-        const codNorm = normalizarClaveSuperEstricta(rawCod);
-        const bodNorm = normalizarClaveSuperEstricta(rawBodega);
-        let stock = parseFloat(rawUnidades.replace(',', '.')) || 0;
+        const codNorm = normalizarClaveSuperEstricta(cols[colCod]);
+        const bodNorm = normalizarClaveSuperEstricta(cols[colBod]);
+        let stock = parseFloat((cols[colUni] || '0').replace(',', '.')) || 0;
         if (stock < 0) stock = 0;
 
         if (bodNorm.includes('cedi') || bodNorm.includes('bodegaprincipalcedi')) {
@@ -507,20 +503,15 @@
 
       for (let i = 0; i < datosPendientes.length; i++) {
         const row = datosPendientes[i];
-        const rawBodega = obtenerValorColumna(row, ['Bodega Encabezado', 'Bodega']);
-        const rawCodigo = obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo']);
-        const rawTipoComp = obtenerValorColumna(row, ['Tipo Comprobante']);
-
-        const bodNorm = normalizarClaveSuperEstricta(rawBodega);
-        const codNorm = normalizarClaveSuperEstricta(rawCodigo);
-        const tipoNorm = normalizarClaveSuperEstricta(rawTipoComp);
+        const bodNorm = normalizarClaveSuperEstricta(obtenerValorColumna(row, ['Bodega Encabezado', 'Bodega']));
+        const codNorm = normalizarClaveSuperEstricta(obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo']));
+        const tipoNorm = normalizarClaveSuperEstricta(obtenerValorColumna(row, ['Tipo Comprobante']));
 
         let stockOrigen = 0;
         if (permitidosNEPS.includes(tipoNorm) && mapaStockNEPS.has(codNorm)) {
           stockOrigen = mapaStockNEPS.get(codNorm);
         } else {
-          const claveHash = bodNorm + '_' + codNorm;
-          stockOrigen = mapaStockEstandar.get(claveHash) || 0;
+          stockOrigen = mapaStockEstandar.get(bodNorm + '_' + codNorm) || 0;
         }
 
         row['Inventario Disponible en el punto de origen'] = stockOrigen;
@@ -558,7 +549,7 @@
       const file = input.files[0];
       if (!file) return;
 
-      document.getElementById('infoContador').textContent = 'Procesando archivo...';
+      document.getElementById('infoContador').textContent = 'Procesando ultra-rápido...';
 
       setTimeout(() => {
         const esExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
@@ -567,12 +558,10 @@
         if (esExcel) {
           reader.onload = async function(e) {
             try {
-              const data = new Uint8Array(e.target.result);
-              const workbook = XLSX.read(data, { type: 'array' });
-              const firstSheet = workbook.SheetNames[0];
-              const csvText = XLSX.utils.sheet_to_csv(workbook.Sheets[firstSheet], { FS: ';' });
+              const workbook = XLSX.read(new Uint8Array(e.target.result), { type: 'array', dense: true });
+              const matriz = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1, defval: '' });
               
-              parsearCSVFast(csvText);
+              parsearCSVFast(matriz.map(row => row.join(';')).join('\n'));
               await sincronizarDesdeNube();
               poblarSelectoresFiltro();
               aplicarFiltros();
@@ -597,7 +586,7 @@
           };
           reader.readAsText(file, 'ISO-8859-1');
         }
-      }, 30);
+      }, 10);
     }
 
     function cargarInventarioManualmente() {
@@ -606,7 +595,7 @@
       if (!file) return alert('Por favor selecciona un archivo de inventario (CSV o Excel).');
       if (datosPendientes.length === 0) return alert('Carga primero el archivo de Pendientes.');
 
-      document.getElementById('infoContador').textContent = 'Cruzando Inventario instantáneamente...';
+      document.getElementById('infoContador').textContent = 'Cruzando Inventario al instante...';
 
       setTimeout(() => {
         const esExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
@@ -615,15 +604,12 @@
         if (esExcel) {
           reader.onload = async function(e) {
             try {
-              const data = new Uint8Array(e.target.result);
-              const workbook = XLSX.read(data, { type: 'array' });
-              const firstSheet = workbook.SheetNames[0];
-              const csvText = XLSX.utils.sheet_to_csv(workbook.Sheets[firstSheet], { FS: ';' });
+              const workbook = XLSX.read(new Uint8Array(e.target.result), { type: 'array', dense: true });
+              const matriz = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1, defval: '' });
               
-              procesarInventarioFast(csvText);
+              procesarMatrizInventarioFast(matriz);
               await sincronizarDesdeNube();
               aplicarFiltros();
-              alert('Stock cargado exitosamente desde Excel.');
             } catch (err) {
               alert('Error al cruzar inventario Excel: ' + err.message);
             }
@@ -635,17 +621,16 @@
               let contenido = evt.target.result;
               if (contenido.charCodeAt(0) === 0xFEFF) contenido = contenido.substring(1);
               
-              procesarInventarioFast(contenido);
+              procesarMatrizInventarioFast(convertirTextoAMatriz(contenido));
               await sincronizarDesdeNube();
               aplicarFiltros();
-              alert('Stock cargado exitosamente.');
             } catch (err) {
               alert('Error al cruzar inventario: ' + err.message);
             }
           };
           reader.readAsText(file, 'ISO-8859-1');
         }
-      }, 30);
+      }, 10);
     }
 
     function limpiarDatos() {
@@ -684,7 +669,7 @@
 
     function debounceFiltros() {
       clearTimeout(timerDebounce);
-      timerDebounce = setTimeout(aplicarFiltros, 150);
+      timerDebounce = setTimeout(aplicarFiltros, 100);
     }
 
     function cambiarOrdenClick(tipoDefault) {
