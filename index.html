@@ -262,7 +262,6 @@
   </div>
 
   <script>
-    // URL DE TU APLICACIÓN WEB DE GOOGLE APPS SCRIPT
     const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxHzhqkIySVU1v-QFZnJjPoXVW83pg40X7orwR5d96qs3DWyEBfe3Wl9mwAsnE9AMIr/exec';
 
     const STORAGE_KEY = 'app_pendientes_data';
@@ -325,7 +324,6 @@
           console.warn('Error al cargar inventario automático:', eInv);
         }
 
-        // Descargar el estado global actualizado desde Google Sheets
         await sincronizarDesdeNube();
 
         poblarSelectoresFiltro();
@@ -355,7 +353,10 @@
 
             if (mapaAjustes[idUnico]) {
               const ajuste = mapaAjustes[idUnico];
-              row['Diferencia Real'] = ajuste.diff;
+              const cantOrig = row['_CantOriginal'] || 0;
+              const cantEntregada = parseInt(ajuste.cantEntregada) || 0;
+              
+              row['Diferencia Real'] = Math.max(0, cantOrig - cantEntregada);
               row['Estado Final Mennar'] = ajuste.est;
               row['Fecha y hora cuando se entrega del Pendiente'] = ajuste.fecha;
             }
@@ -380,7 +381,10 @@
 
           if (mapaAjustes[idUnico]) {
             const ajuste = mapaAjustes[idUnico];
-            row['Diferencia Real'] = ajuste.diff;
+            const cantOrig = row['_CantOriginal'] || 0;
+            const cantEntregada = parseInt(ajuste.cantEntregada) || 0;
+
+            row['Diferencia Real'] = Math.max(0, cantOrig - cantEntregada);
             row['Estado Final Mennar'] = ajuste.est;
             row['Fecha y hora cuando se entrega del Pendiente'] = ajuste.fecha;
           }
@@ -815,6 +819,14 @@
       const pendienteActual = parseInt(diffReal) || 0;
       const cantOriginal = item['_CantOriginal'] || pendienteActual;
       const descripcion = obtenerValorColumna(item, ['Descripcion', 'Descripción']);
+
+      const doc = obtenerValorColumna(item, ['Documento']);
+      const bodega = obtenerValorColumna(item, ['Bodega Encabezado', 'Bodega']);
+      const cliente = obtenerValorColumna(item, ['Razon Social Cliente', 'Cliente']);
+      const cedula = obtenerValorColumna(item, ['Cedula Paciente', 'Cedula']);
+      const paciente = obtenerValorColumna(item, ['Nombre Paciente', 'Nombre']);
+      const codArt = obtenerValorColumna(item, ['Codigo Articulo', 'Código Artículo']);
+      const codContrato = obtenerValorColumna(item, ['Codigo Contrato']);
       
       const entrada = prompt(
         `Registrar entrega para:\n${descripcion}\n\n` +
@@ -828,9 +840,7 @@
 
       if (entrada !== null && entrada.trim() !== '' && !isNaN(entrada)) {
         const cantidadIngresada = parseInt(entrada);
-        const doc = obtenerValorColumna(item, ['Documento']);
-        const cod = obtenerValorColumna(item, ['Codigo Articulo', 'Código Artículo']);
-        const idUnico = normalizarClaveSuperEstricta(doc + '_' + cod);
+        const idUnico = normalizarClaveSuperEstricta(doc + '_' + codArt);
 
         let cambiosExistentes = {};
         try {
@@ -866,7 +876,15 @@
         item['Estado Final Mennar'] = estadoFinal;
 
         cambiosExistentes[idUnico] = {
-          diff: saldoRestante,
+          doc: doc,
+          bodega: bodega,
+          cliente: cliente,
+          cedula: cedula,
+          paciente: paciente,
+          medicamento: descripcion,
+          codArt: codArt,
+          codContrato: codContrato,
+          cantEntregada: cantidadIngresada,
           est: estadoFinal,
           fecha: fechaEntrega
         };
@@ -875,7 +893,15 @@
 
         enviarCambioANube({
           idUnico: idUnico,
-          diff: saldoRestante,
+          doc: doc,
+          bodega: bodega,
+          cliente: cliente,
+          cedula: cedula,
+          paciente: paciente,
+          medicamento: descripcion,
+          codArt: codArt,
+          codContrato: codContrato,
+          cantEntregada: cantidadIngresada,
           est: estadoFinal,
           fecha: fechaEntrega,
           accion: 'guardar'
