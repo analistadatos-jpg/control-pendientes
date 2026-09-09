@@ -261,20 +261,30 @@
       await cargarArchivosAutomaticos();
     });
 
+    async function descargarYProcesarCSV(urlFile, tipo) {
+      const resp = await fetch(urlFile);
+      if (!resp.ok) throw new Error('No se pudo acceder a ' + urlFile);
+      
+      const buffer = await resp.arrayBuffer();
+      
+      // Intentar primero con utf-8 y si falla/trae caracteres vacíos, iso-8859-1
+      let texto = new TextDecoder('utf-8').decode(buffer);
+      let parsed = parsearCSV(texto, tipo);
+      
+      if (parsed.filas.length === 0) {
+        texto = new TextDecoder('iso-8859-1').decode(buffer);
+        parsed = parsearCSV(texto, tipo);
+      }
+      return parsed;
+    }
+
     async function cargarArchivosAutomaticos() {
       document.getElementById('infoContador').textContent = 'Sincronizando reportes e inventario...';
       try {
         const timestamp = '?v=' + new Date().getTime();
-        const decoder = new TextDecoder('iso-8859-1');
 
-        // 1. Cargar Pendientes
-        const respPend = await fetch('./' + encodeURIComponent(ARCHIVO_PENDIENTES) + timestamp);
-        if (!respPend.ok) throw new Error('No se pudo abrir ' + ARCHIVO_PENDIENTES);
-        
-        const bufferPend = await respPend.arrayBuffer();
-        const textoPend = decoder.decode(bufferPend);
-        
-        const resPend = parsearCSV(textoPend, 'pendientes');
+        // 1. Cargar Reporte de Pendientes
+        const resPend = await descargarYProcesarCSV('./' + encodeURIComponent(ARCHIVO_PENDIENTES) + timestamp, 'pendientes');
         cabeceras = resPend.cabeceras;
         datosPendientes = resPend.filas;
 
@@ -285,7 +295,7 @@
           cabeceras.push('Inventario BODEGA PRINCIPAL CEDI');
         }
 
-        // Recuperar ajustes de entrega manual si existían
+        // Reaplicar cambios guardados previamente en memoria local (subsanaciones manuales)
         const dataGuardada = localStorage.getItem(STORAGE_KEY);
         if (dataGuardada) {
           try {
@@ -316,17 +326,12 @@
           } catch(e) {}
         }
 
-        // 2. Cargar Inventario
+        // 2. Cargar Inventario de forma síncrona
         try {
-          const respInv = await fetch('./' + encodeURIComponent(ARCHIVO_INVENTARIO) + timestamp);
-          if (respInv.ok) {
-            const bufferInv = await respInv.arrayBuffer();
-            const textoInv = decoder.decode(bufferInv);
-            const resInv = parsearCSV(textoInv, 'inventario');
-            procesarCruzeInventario(resInv.filas);
-          }
+          const resInv = await descargarYProcesarCSV('./' + encodeURIComponent(ARCHIVO_INVENTARIO) + timestamp, 'inventario');
+          procesarCruzeInventario(resInv.filas);
         } catch (eInv) {
-          console.warn('Error al leer inventario automático:', eInv);
+          console.warn('Error cargando inventario:', eInv);
         }
 
         guardarEnLocalStorage();
@@ -342,7 +347,6 @@
       const lineas = texto.split(/\r\n|\n/);
       if (lineas.length === 0) return { cabeceras: [], filas: [] };
 
-      // Detección autónoma del separador de columnas
       let separador = ';';
       let conteoPuntoComa = 0;
       let conteoComa = 0;
@@ -413,13 +417,12 @@
       return { cabeceras: headers, filas };
     }
 
-    // Normalizador Ultra-Estricto para garantizar coincidencias del $100\%$ entre CSVs
     function normalizarClaveSuperEstricta(val) {
       if (!val) return '';
       return val.toString()
         .toLowerCase()
-        .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // Elimina tildes y acentos
-        .replace(/[^a-z0-9]/g, ''); // Deja ÚNICAMENTE letras y números (elimina espacios, guiones, puntos)
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]/g, '');
     }
 
     function obtenerValorColumna(row, posiblesNombres) {
