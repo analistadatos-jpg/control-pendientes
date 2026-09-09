@@ -11,6 +11,8 @@
       --danger: #dc3545;
       --secondary: #6c757d;
       --dark: #212529;
+      --warning: #ffc107;
+      --info: #0dcaf0;
     }
 
     body {
@@ -84,6 +86,7 @@
       display: inline-block;
     }
     .badge-pending { background-color: #ffe69c; color: #664d03; }
+    .badge-partial { background-color: #cff4fc; color: #055160; }
     .badge-done { background-color: #d1e7dd; color: #0f5132; }
 
     .table-container { 
@@ -197,6 +200,7 @@
         <select id="selectEstado" onchange="aplicarFiltros()">
           <option value="">-- Todos los Estados --</option>
           <option value="Pendiente">Pendiente Activo</option>
+          <option value="Pendiente Parcial">Pendiente Parcial</option>
           <option value="Subsanado">Subsanado</option>
         </select>
       </div>
@@ -288,6 +292,12 @@
         cabeceras = resPend.cabeceras;
         datosPendientes = resPend.filas;
 
+        // Guardar el valor inicial original para detectar entregas parciales
+        datosPendientes.forEach(row => {
+          const diffOriginal = obtenerValorColumna(row, ['Diferencia Real', 'Cant. Pendiente', 'Cantidad Pendiente']);
+          row['_CantOriginal'] = parseInt(diffOriginal) || 0;
+        });
+
         if (!cabeceras.includes('Inventario Disponible en el punto de origen')) {
           cabeceras.push('Inventario Disponible en el punto de origen');
         }
@@ -304,7 +314,7 @@
           console.warn('Error al cargar inventario automático:', eInv);
         }
 
-        // 3. REAPLICAR SUBSANACIONES GUARDADAS (Persistencia)
+        // 3. REAPLICAR SUBSANACIONES GUARDADAS
         reaplicarSubsanaciones();
 
         poblarSelectoresFiltro();
@@ -460,6 +470,11 @@
             const resultado = parsearCSV(contenido, 'pendientes');
             cabeceras = resultado.cabeceras;
             datosPendientes = resultado.filas;
+
+            datosPendientes.forEach(row => {
+              const diffOriginal = obtenerValorColumna(row, ['Diferencia Real', 'Cant. Pendiente', 'Cantidad Pendiente']);
+              row['_CantOriginal'] = parseInt(diffOriginal) || 0;
+            });
 
             if (!cabeceras.includes('Inventario Disponible en el punto de origen')) {
               cabeceras.push('Inventario Disponible en el punto de origen');
@@ -671,12 +686,11 @@
         let coincideEstado = true;
         const diffReal = obtenerValorColumna(row, ['Diferencia Real', 'Cant. Pendiente']);
         const pendienteActual = parseInt(diffReal) || 0;
-        const estFinal = obtenerValorColumna(row, ['Estado Final Mennar']);
+        const cantOriginal = row['_CantOriginal'] || pendienteActual;
+        const estFinal = row['Estado Final Mennar'] || obtenerEstadoCalculado(pendienteActual, cantOriginal);
 
-        if (estadoSel === 'Subsanado') {
-          coincideEstado = pendienteActual <= 0 || estFinal === 'Subsanado';
-        } else if (estadoSel === 'Pendiente') {
-          coincideEstado = pendienteActual > 0 && estFinal !== 'Subsanado';
+        if (estadoSel) {
+          coincideEstado = estFinal.toLowerCase() === estadoSel.toLowerCase();
         }
 
         return coincideBusqueda && coincideMes && coincideBodega && coincideCliente && coincideInventario && coincideCedi && coincideEstado;
@@ -690,6 +704,12 @@
 
       paginaActual = 1;
       renderizarTabla();
+    }
+
+    function obtenerEstadoCalculado(cantPendienteActual, cantOriginal) {
+      if (cantPendienteActual <= 0) return 'Subsanado';
+      if (cantOriginal > 0 && cantPendienteActual < cantOriginal) return 'Pendiente Parcial';
+      return 'Pendiente';
     }
 
     function renderizarTabla() {
@@ -712,8 +732,14 @@
         const indexOriginal = datosPendientes.indexOf(row);
         const diffReal = obtenerValorColumna(row, ['Diferencia Real', 'Cant. Pendiente']);
         const cantidadPendiente = parseInt(diffReal) || 0;
-        const estFinal = obtenerValorColumna(row, ['Estado Final Mennar']);
-        const esSubsanado = cantidadPendiente <= 0 || estFinal === 'Subsanado';
+        const cantOriginal = row['_CantOriginal'] || cantidadPendiente;
+
+        // Calcular estado dinámicamente si no está forzado
+        const estadoFinal = row['Estado Final Mennar'] || obtenerEstadoCalculado(cantidadPendiente, cantOriginal);
+
+        let badgeClass = 'badge-pending';
+        if (estadoFinal === 'Subsanado') badgeClass = 'badge-done';
+        else if (estadoFinal === 'Pendiente Parcial') badgeClass = 'badge-partial';
 
         let fechaOrigen = obtenerValorColumna(row, ['Fecha Origen Dispensacion', 'Fecha Origen']);
         if (fechaOrigen.includes(' ')) fechaOrigen = fechaOrigen.split(' ')[0];
@@ -738,13 +764,13 @@
           <td><strong>${inventarioDisp}</strong></td>
           <td><strong>${inventarioCedi}</strong></td>
           <td>
-            <span class="badge ${esSubsanado ? 'badge-done' : 'badge-pending'}">
-              ${esSubsanado ? 'Subsanado' : 'Pendiente'}
+            <span class="badge ${badgeClass}">
+              ${estadoFinal}
             </span>
           </td>
           <td>
             <button class="btn-subsanar" onclick="subsanar(${indexOriginal})">
-              ${esSubsanado ? 'Ajustar' : 'Subsanar'}
+              ${estadoFinal === 'Subsanado' ? 'Ajustar' : 'Subsanar'}
             </button>
           </td>
         `;
@@ -768,27 +794,37 @@
       const item = datosPendientes[index];
       const diffReal = obtenerValorColumna(item, ['Diferencia Real', 'Cant. Pendiente']);
       const pendienteActual = parseInt(diffReal) || 0;
+      const cantOriginal = item['_CantOriginal'] || pendienteActual;
       const descripcion = obtenerValorColumna(item, ['Descripcion', 'Descripción']);
       
       const entrada = prompt(
         `Ajustar saldo pendiente para:\n${descripcion}\n\n` +
-        `• Cantidad pendiente actual: ${pendienteActual}\n\n` +
-        `Sugerencias de ingreso:\n` +
-        ` - Para SUBSANAR (entregar todo): Ingrese 0\n` +
-        ` - Para REVERTIR A PENDIENTE: Ingrese la cantidad pendiente original (ej. 1, 2, 60)`
+        `• Cantidad pendiente actual: ${pendienteActual}\n` +
+        `• Cantidad original en registro: ${cantOriginal}\n\n` +
+        `Ingrese el NUEVO SALDO PENDIENTE:\n` +
+        ` - Para SUBSANAR COMPLETO (entregó todo): Ingrese 0\n` +
+        ` - Para ENTREGA PARCIAL (ej: de 2 entregó 1): Ingrese 1\n` +
+        ` - Para DEVOLVER A PENDIENTE COMPLETO: Ingrese ${cantOriginal}`
       );
 
       if (entrada !== null && entrada.trim() !== '' && !isNaN(entrada)) {
-        const nuevaCantidad = parseInt(entrada);
-        if (nuevaCantidad < 0) return;
+        const nuevoSaldo = parseInt(entrada);
+        if (nuevoSaldo < 0) return;
 
-        item['Diferencia Real'] = nuevaCantidad;
+        item['Diferencia Real'] = nuevoSaldo;
         
         const ahora = new Date();
         const fechaEntrega = ahora.toISOString().replace('T', ' ').substring(0, 19);
         item['Fecha y hora cuando se entrega del Pendiente'] = fechaEntrega;
 
-        const estadoFinal = nuevaCantidad === 0 ? 'Subsanado' : 'Pendiente';
+        // Determinación del Estado
+        let estadoFinal = 'Pendiente';
+        if (nuevoSaldo === 0) {
+          estadoFinal = 'Subsanado';
+        } else if (nuevoSaldo < cantOriginal) {
+          estadoFinal = 'Pendiente Parcial';
+        }
+
         item['Estado Final Mennar'] = estadoFinal;
 
         // GUARDAR CAMBIO PERMANENTE EN LOCALSTORAGE
@@ -802,14 +838,13 @@
         } catch(e) {}
 
         cambiosExistentes[idUnico] = {
-          diff: nuevaCantidad,
+          diff: nuevoSaldo,
           est: estadoFinal,
           fecha: fechaEntrega
         };
 
         localStorage.setItem(CHANGES_KEY, JSON.stringify(cambiosExistentes));
         
-        // Re-aplicar filtros para refrescar estado en la tabla
         aplicarFiltros();
       }
     }
