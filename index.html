@@ -246,6 +246,7 @@
 
   <script>
     const STORAGE_KEY = 'app_pendientes_data';
+    const CHANGES_KEY = 'app_pendientes_subsanaciones';
     let datosPendientes = [];
     let datosFiltrados = [];
     let cabeceras = [];
@@ -266,11 +267,9 @@
       if (!resp.ok) throw new Error('HTTP status ' + resp.status + ' al descargar ' + urlFile);
       
       const buffer = await resp.arrayBuffer();
-      // Limpiar de posibles BOM (\uFEFF)
       let texto = new TextDecoder('utf-8').decode(buffer);
       if (texto.charCodeAt(0) === 0xFEFF) texto = texto.slice(1);
       
-      // Probar si UTF-8 arrojó caracteres raros y reintentar con ISO-8859-1 si aplica
       if (texto.includes('')) {
         texto = new TextDecoder('iso-8859-1').decode(buffer);
         if (texto.charCodeAt(0) === 0xFEFF) texto = texto.slice(1);
@@ -283,7 +282,7 @@
       try {
         const timestamp = '?v=' + new Date().getTime();
 
-        // 1. Cargar Pendientes
+        // 1. Cargar Reporte de Pendientes desde GitHub
         const textoPend = await obtenerTextoCSV('./' + encodeURIComponent(ARCHIVO_PENDIENTES) + timestamp);
         const resPend = parsearCSV(textoPend, 'pendientes');
         cabeceras = resPend.cabeceras;
@@ -296,48 +295,18 @@
           cabeceras.push('Inventario BODEGA PRINCIPAL CEDI');
         }
 
-        // Fusionar entregas guardadas en localStorage
-        const dataGuardada = localStorage.getItem(STORAGE_KEY);
-        if (dataGuardada) {
-          try {
-            const arrGuardado = JSON.parse(dataGuardada);
-            const mapaAjustes = {};
-            arrGuardado.forEach(item => {
-              const doc = obtenerValorColumna(item, ['Documento']);
-              const cod = obtenerValorColumna(item, ['Codigo Articulo', 'Código Artículo']);
-              if (doc && cod) {
-                mapaAjustes[doc + '_' + cod] = {
-                  diff: item['Diferencia Real'],
-                  est: item['Estado Final Mennar'],
-                  fecha: item['Fecha y hora cuando se entrega del Pendiente']
-                };
-              }
-            });
-
-            datosPendientes.forEach(row => {
-              const doc = obtenerValorColumna(row, ['Documento']);
-              const cod = obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo']);
-              const clave = doc + '_' + cod;
-              if (mapaAjustes[clave]) {
-                if (mapaAjustes[clave].diff !== undefined) row['Diferencia Real'] = mapaAjustes[clave].diff;
-                if (mapaAjustes[clave].est) row['Estado Final Mennar'] = mapaAjustes[clave].est;
-                if (mapaAjustes[clave].fecha) row['Fecha y hora cuando se entrega del Pendiente'] = mapaAjustes[clave].fecha;
-              }
-            });
-          } catch(e) {}
-        }
-
         // 2. Cargar Inventario
         try {
           const textoInv = await obtenerTextoCSV('./' + encodeURIComponent(ARCHIVO_INVENTARIO) + timestamp);
           const resInv = parsearCSV(textoInv, 'inventario');
-          console.log('Se leyeron automáticamente ' + resInv.filas.length + ' filas del inventario.csv');
           procesarCruzeInventario(resInv.filas);
         } catch (eInv) {
           console.warn('Error al cargar inventario automático:', eInv);
         }
 
-        guardarEnLocalStorage();
+        // 3. REAPLICAR SUBSANACIONES GUARDADAS (Persistencia Garantizada)
+        reaplicarSubsanaciones();
+
         poblarSelectoresFiltro();
         aplicarFiltros();
       } catch (err) {
@@ -346,11 +315,33 @@
       }
     }
 
+    function reaplicarSubsanaciones() {
+      const cambiosGuardados = localStorage.getItem(CHANGES_KEY);
+      if (!cambiosGuardados) return;
+
+      try {
+        const mapaAjustes = JSON.parse(cambiosGuardados);
+        datosPendientes.forEach(row => {
+          const doc = obtenerValorColumna(row, ['Documento']);
+          const cod = obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo']);
+          const idUnico = normalizarClaveSuperEstricta(doc + '_' + cod);
+
+          if (mapaAjustes[idUnico]) {
+            const ajuste = mapaAjustes[idUnico];
+            row['Diferencia Real'] = ajuste.diff;
+            row['Estado Final Mennar'] = ajuste.est;
+            row['Fecha y hora cuando se entrega del Pendiente'] = ajuste.fecha;
+          }
+        });
+      } catch (e) {
+        console.error('Error al reaplicar subsanaciones:', e);
+      }
+    }
+
     function parsearCSV(texto, tipo = 'general') {
       const lineas = texto.split(/\r\n|\n/);
       if (lineas.length === 0) return { cabeceras: [], filas: [] };
 
-      // Detección automática del separador
       let separador = ';';
       let countSemicolon = 0;
       let countComma = 0;
@@ -477,7 +468,7 @@
               cabeceras.push('Inventario BODEGA PRINCIPAL CEDI');
             }
 
-            guardarEnLocalStorage();
+            reaplicarSubsanaciones();
             poblarSelectoresFiltro();
             aplicarFiltros();
           } catch (err) {
@@ -503,7 +494,7 @@
             
             const resultado = parsearCSV(contenido, 'inventario');
             procesarCruzeInventario(resultado.filas);
-            guardarEnLocalStorage();
+            reaplicarSubsanaciones();
             poblarSelectoresFiltro();
             aplicarFiltros();
             alert('Stock cargado exitosamente.');
@@ -589,19 +580,10 @@
       });
     }
 
-    function guardarEnLocalStorage() {
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(datosPendientes));
-        localStorage.setItem(STORAGE_KEY + '_headers', JSON.stringify(cabeceras));
-      } catch (e) {
-        console.warn('LocalStorage excedido por capacidad.');
-      }
-    }
-
     function limpiarDatos() {
       if (confirm('¿Desea borrar la memoria local y recargar los datos más recientes desde GitHub?')) {
         localStorage.removeItem(STORAGE_KEY);
-        localStorage.removeItem(STORAGE_KEY + '_headers');
+        localStorage.removeItem(CHANGES_KEY);
         datosPendientes = [];
         datosFiltrados = [];
         cabeceras = [];
@@ -800,13 +782,29 @@
         item['Diferencia Real'] = nuevaDiferencia;
         
         const ahora = new Date();
-        item['Fecha y hora cuando se entrega del Pendiente'] = ahora.toISOString().replace('T', ' ').substring(0, 19);
+        const fechaEntrega = ahora.toISOString().replace('T', ' ').substring(0, 19);
+        item['Fecha y hora cuando se entrega del Pendiente'] = fechaEntrega;
 
-        if (nuevaDiferencia === 0) {
-          item['Estado Final Mennar'] = 'Subsanado';
-        }
+        const estadoFinal = nuevaDiferencia === 0 ? 'Subsanado' : 'Pendiente';
+        item['Estado Final Mennar'] = estadoFinal;
 
-        guardarEnLocalStorage();
+        // GUARDAR CAMBIO EN EL MAPA INDEPENDIENTE DE SUBSANACIONES
+        const doc = obtenerValorColumna(item, ['Documento']);
+        const cod = obtenerValorColumna(item, ['Codigo Articulo', 'Código Artículo']);
+        const idUnico = normalizarClaveSuperEstricta(doc + '_' + cod);
+
+        let cambiosExistentes = {};
+        try {
+          cambiosExistentes = JSON.parse(localStorage.getItem(CHANGES_KEY)) || {};
+        } catch(e) {}
+
+        cambiosExistentes[idUnico] = {
+          diff: nuevaDiferencia,
+          est: estadoFinal,
+          fecha: fechaEntrega
+        };
+
+        localStorage.setItem(CHANGES_KEY, JSON.stringify(cambiosExistentes));
         renderizarTabla();
       }
     }
