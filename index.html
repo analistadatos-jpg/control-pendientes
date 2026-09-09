@@ -286,13 +286,12 @@
       try {
         const timestamp = '?v=' + new Date().getTime();
 
-        // 1. Cargar Reporte de Pendientes
+        // 1. Cargar Pendientes
         const textoPend = await obtenerTextoCSV('./' + encodeURIComponent(ARCHIVO_PENDIENTES) + timestamp);
         const resPend = parsearCSV(textoPend, 'pendientes');
         cabeceras = resPend.cabeceras;
         datosPendientes = resPend.filas;
 
-        // Guardar la cantidad original inicial
         datosPendientes.forEach(row => {
           const diffOrig = obtenerValorColumna(row, ['Diferencia Real', 'Cant. Pendiente', 'Cantidad Pendiente']);
           row['_CantOriginal'] = parseInt(diffOrig) || 0;
@@ -305,24 +304,133 @@
           cabeceras.push('Inventario BODEGA PRINCIPAL CEDI');
         }
 
-        // 2. Cargar Inventario
+        // 2. Cargar Inventario (Segunda fila encabezados, Col N = Bodega, Col B = Código Art, Col I = Unidades)
         try {
           const textoInv = await obtenerTextoCSV('./' + encodeURIComponent(ARCHIVO_INVENTARIO) + timestamp);
-          const resInv = parsearCSV(textoInv, 'inventario');
-          procesarCruzeInventario(resInv.filas);
+          const resInv = parsearCSVInventarioPosicional(textoInv);
+          procesarCruzeInventarioPosicional(resInv);
         } catch (eInv) {
           console.warn('Error al cargar inventario automático:', eInv);
         }
 
-        // 3. Reaplicar ajustes persistentes
         reaplicarSubsanaciones();
-
         poblarSelectoresFiltro();
         aplicarFiltros();
       } catch (err) {
         document.getElementById('infoContador').textContent = 'Error al sincronizar datos automáticos.';
         console.error('Error durante la carga inicial:', err);
       }
+    }
+
+    function parsearCSVInventarioPosicional(texto) {
+      const lineas = texto.split(/\r\n|\n/);
+      if (lineas.length < 2) return [];
+
+      let separador = ';';
+      let countSemicolon = 0, countComma = 0, countTab = 0;
+      for (let i = 0; i < Math.min(10, lineas.length); i++) {
+        countSemicolon += (lineas[i].match(/;/g) || []).length;
+        countComma += (lineas[i].match(/,/g) || []).length;
+        countTab += (lineas[i].match(/\t/g) || []).length;
+      }
+      if (countComma > countSemicolon && countComma > countTab) separador = ',';
+      else if (countTab > countSemicolon && countTab > countComma) separador = '\t';
+
+      const parseLinea = (linea) => {
+        const resultado = [];
+        let dentroComillas = false;
+        let valorActual = '';
+        for (let i = 0; i < linea.length; i++) {
+          const char = linea[i];
+          if (char === '"') dentroComillas = !dentroComillas;
+          else if (char === separador && !dentroComillas) {
+            resultado.push(valorActual.trim().replace(/^"|"$/g, '').replace(/[\u200B-\u200D\uFEFF]/g, ''));
+            valorActual = '';
+          } else valorActual += char;
+        }
+        resultado.push(valorActual.trim().replace(/^"|"$/g, '').replace(/[\u200B-\u200D\uFEFF]/g, ''));
+        return resultado;
+      };
+
+      // Fila 2 (index 1) contiene los encabezados
+      const registros = [];
+      for (let i = 1; i < lineas.length; i++) {
+        if (!lineas[i].trim()) continue;
+        const cols = parseLinea(lineas[i]);
+        
+        // Mapeo por índice estricto
+        // Col B = Indice 1 (Codigo)
+        // Col I = Indice 8 (Unidades / Stock)
+        // Col N = Indice 13 (Bodega)
+        const codigo = cols[1] || cols[0] || '';
+        const unidades = cols[8] || cols[7] || '0';
+        const bodega = cols[13] || cols[12] || cols[cols.length - 1] || '';
+
+        registros.push({
+          bodega: bodega,
+          codigo: codigo,
+          unidades: unidades,
+          rowRaw: cols
+        });
+      }
+      return registros;
+    }
+
+    function procesarCruzeInventarioPosicional(filasInventario) {
+      const mapaEstandar = {};
+      const mapaNEPS = {};
+      const mapaCEDI = {};
+
+      const permitidosNEPS = [
+        'disp. mennar 2', 'disp. mennar 5', 'disp. mennar 4', 'bodega pendientes neps'
+      ].map(normalizarClaveSuperEstricta);
+
+      filasInventario.forEach(item => {
+        const bodegaNorm = normalizarClaveSuperEstricta(item.bodega);
+        const codigoNorm = normalizarClaveSuperEstricta(item.codigo);
+
+        let stock = parseFloat(item.unidades.toString().replace(',', '.')) || 0;
+        if (stock < 0) stock = 0;
+
+        if (bodegaNorm.includes('bodegaprincipalcedi') || bodegaNorm.includes('cediprincipal') || bodegaNorm === 'cedi') {
+          if (codigoNorm) mapaCEDI[codigoNorm] = (mapaCEDI[codigoNorm] || 0) + stock;
+        }
+
+        if (bodegaNorm.includes('bodegapendientesneps') || bodegaNorm.includes('pendientesneps')) {
+          if (codigoNorm) mapaNEPS[codigoNorm] = (mapaNEPS[codigoNorm] || 0) + stock;
+        }
+
+        const clave = bodegaNorm + '_' + codigoNorm;
+        if (clave) mapaEstandar[clave] = (mapaEstandar[clave] || 0) + stock;
+      });
+
+      datosPendientes.forEach(row => {
+        // Col C = Bodega Encabezado, Col J = Codigo Articulo
+        const rawBodega = obtenerValorColumna(row, ['Bodega Encabezado', 'BodegaEncabezado', 'Bodega']);
+        const rawCodigo = obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo', 'CodigoArticulo']);
+        const rawTipoComp = obtenerValorColumna(row, ['Tipo Comprobante', 'TipoComprobante']);
+
+        const bodNorm = normalizarClaveSuperEstricta(rawBodega);
+        const codNorm = normalizarClaveSuperEstricta(rawCodigo);
+        const tipoCompNorm = normalizarClaveSuperEstricta(rawTipoComp);
+
+        let stockVal = 0;
+        let encontrado = false;
+
+        if (permitidosNEPS.includes(tipoCompNorm) && mapaNEPS.hasOwnProperty(codNorm)) {
+          stockVal = mapaNEPS[codNorm];
+          encontrado = true;
+        } else {
+          const claveMatch = bodNorm + '_' + codNorm;
+          if (mapaEstandar.hasOwnProperty(claveMatch)) {
+            stockVal = mapaEstandar[claveMatch];
+            encontrado = true;
+          }
+        }
+
+        row['Inventario Disponible en el punto de origen'] = encontrado ? stockVal : 0;
+        row['Inventario BODEGA PRINCIPAL CEDI'] = mapaCEDI.hasOwnProperty(codNorm) ? mapaCEDI[codNorm] : 0;
+      });
     }
 
     function reaplicarSubsanaciones() {
@@ -343,9 +451,7 @@
             row['Fecha y hora cuando se entrega del Pendiente'] = ajuste.fecha;
           }
         });
-      } catch (e) {
-        console.error('Error al reaplicar subsanaciones:', e);
-      }
+      } catch (e) {}
     }
 
     function parsearCSV(texto, tipo = 'general') {
@@ -353,10 +459,7 @@
       if (lineas.length === 0) return { cabeceras: [], filas: [] };
 
       let separador = ';';
-      let countSemicolon = 0;
-      let countComma = 0;
-      let countTab = 0;
-
+      let countSemicolon = 0, countComma = 0, countTab = 0;
       for (let i = 0; i < Math.min(10, lineas.length); i++) {
         countSemicolon += (lineas[i].match(/;/g) || []).length;
         countComma += (lineas[i].match(/,/g) || []).length;
@@ -370,17 +473,13 @@
         const resultado = [];
         let dentroComillas = false;
         let valorActual = '';
-
         for (let i = 0; i < linea.length; i++) {
           const char = linea[i];
-          if (char === '"') {
-            dentroComillas = !dentroComillas;
-          } else if (char === separador && !dentroComillas) {
+          if (char === '"') dentroComillas = !dentroComillas;
+          else if (char === separador && !dentroComillas) {
             resultado.push(limpiarValor(valorActual));
             valorActual = '';
-          } else {
-            valorActual += char;
-          }
+          } else valorActual += char;
         }
         resultado.push(limpiarValor(valorActual));
         return resultado;
@@ -393,11 +492,6 @@
         const lNorm = normalizarClaveSuperEstricta(lineas[i]);
         if (tipo === 'pendientes') {
           if (lNorm.includes('bodega') && lNorm.includes('codigo')) {
-            filaEncabezadoIndex = i;
-            break;
-          }
-        } else if (tipo === 'inventario') {
-          if (lNorm.includes('bodega') || lNorm.includes('unidades') || lNorm.includes('cantidad') || lNorm.includes('codigo') || lNorm.includes('stock')) {
             filaEncabezadoIndex = i;
             break;
           }
@@ -507,8 +601,8 @@
             let contenido = evt.target.result;
             if (contenido.charCodeAt(0) === 0xFEFF) contenido = contenido.substring(1);
             
-            const resultado = parsearCSV(contenido, 'inventario');
-            procesarCruzeInventario(resultado.filas);
+            const resInv = parsearCSVInventarioPosicional(contenido);
+            procesarCruzeInventarioPosicional(resInv);
             reaplicarSubsanaciones();
             poblarSelectoresFiltro();
             aplicarFiltros();
@@ -519,80 +613,6 @@
         };
         reader.readAsText(file, 'ISO-8859-1');
       }, 50);
-    }
-
-    function procesarCruzeInventario(filasInventario) {
-      const mapaInventarioEstandar = {};
-      const mapaInventarioNEPS = {};
-      const mapaInventarioCEDI = {};
-
-      const tiposComprobantePermitidosNEPS = [
-        'disp. mennar 2',
-        'disp. mennar 5',
-        'disp. mennar 4',
-        'bodega pendientes neps'
-      ].map(normalizarClaveSuperEstricta);
-
-      filasInventario.forEach(row => {
-        const rawBodega = obtenerValorColumna(row, ['Bodega', 'bodega', 'Nombre Bodega', 'Bodega Encabezado', 'NombreBodega', 'BODEGA']);
-        const rawCodigo = obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo', 'CodigoArticulo', 'CODIGO', 'Codigo', 'Codigo_Articulo', 'CODIGO ARTICULO', 'ARTICULO']);
-        const rawUnidades = obtenerValorColumna(row, ['Unidades', 'unidades', 'Cantidad', 'Stock', 'Cant', 'CANTIDAD', 'UNIDADES']);
-
-        const bodegaNorm = normalizarClaveSuperEstricta(rawBodega);
-        const codigoNorm = normalizarClaveSuperEstricta(rawCodigo);
-
-        let numUnidades = parseFloat(rawUnidades.toString().replace(',', '.')) || 0;
-        if (numUnidades < 0) numUnidades = 0;
-
-        if (bodegaNorm.includes('bodegaprincipalcedi') || bodegaNorm.includes('cediprincipal') || bodegaNorm === 'cedi') {
-          if (codigoNorm) {
-            mapaInventarioCEDI[codigoNorm] = (mapaInventarioCEDI[codigoNorm] || 0) + numUnidades;
-          }
-        }
-
-        if (bodegaNorm.includes('bodegapendientesneps') || bodegaNorm.includes('pendientesneps')) {
-          if (codigoNorm) {
-            mapaInventarioNEPS[codigoNorm] = (mapaInventarioNEPS[codigoNorm] || 0) + numUnidades;
-          }
-        }
-
-        const claveEstandar = bodegaNorm + '_' + codigoNorm;
-        if (claveEstandar) {
-          mapaInventarioEstandar[claveEstandar] = (mapaInventarioEstandar[claveEstandar] || 0) + numUnidades;
-        }
-      });
-
-      datosPendientes.forEach(row => {
-        const rawBodegaEnc = obtenerValorColumna(row, ['Bodega Encabezado', 'BodegaEncabezado', 'Bodega']);
-        const rawCodArt = obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo', 'CodigoArticulo']);
-        const rawTipoComp = obtenerValorColumna(row, ['Tipo Comprobante', 'TipoComprobante']);
-
-        const bodegaEncNorm = normalizarClaveSuperEstricta(rawBodegaEnc);
-        const codArtNorm = normalizarClaveSuperEstricta(rawCodArt);
-        const tipoCompNorm = normalizarClaveSuperEstricta(rawTipoComp);
-
-        let stockVal = 0;
-        let encontrado = false;
-
-        if (tiposComprobantePermitidosNEPS.includes(tipoCompNorm) && mapaInventarioNEPS.hasOwnProperty(codArtNorm)) {
-          stockVal = mapaInventarioNEPS[codArtNorm];
-          encontrado = true;
-        } else {
-          const claveEstandar = bodegaEncNorm + '_' + codArtNorm;
-          if (mapaInventarioEstandar.hasOwnProperty(claveEstandar)) {
-            stockVal = mapaInventarioEstandar[claveEstandar];
-            encontrado = true;
-          }
-        }
-
-        row['Inventario Disponible en el punto de origen'] = encontrado ? stockVal : 0;
-
-        if (mapaInventarioCEDI.hasOwnProperty(codArtNorm)) {
-          row['Inventario BODEGA PRINCIPAL CEDI'] = mapaInventarioCEDI[codArtNorm];
-        } else {
-          row['Inventario BODEGA PRINCIPAL CEDI'] = 0;
-        }
-      });
     }
 
     function limpiarDatos() {
@@ -669,29 +689,18 @@
 
         const stockActual = parseFloat(row['Inventario Disponible en el punto de origen'] || '0');
         let coincideInventario = true;
-        if (inventarioSel === 'con_stock') {
-          coincideInventario = stockActual > 0;
-        } else if (inventarioSel === 'sin_stock') {
-          coincideInventario = stockActual === 0;
-        }
+        if (inventarioSel === 'con_stock') coincideInventario = stockActual > 0;
+        else if (inventarioSel === 'sin_stock') coincideInventario = stockActual === 0;
 
         const stockCedi = parseFloat(row['Inventario BODEGA PRINCIPAL CEDI'] || '0');
         let coincideCedi = true;
-        if (cediSel === 'con_stock') {
-          coincideCedi = stockCedi > 0;
-        } else if (cediSel === 'sin_stock') {
-          coincideCedi = stockCedi === 0;
-        }
+        if (cediSel === 'con_stock') coincideCedi = stockCedi > 0;
+        else if (cediSel === 'sin_stock') coincideCedi = stockCedi === 0;
 
         let coincideEstado = true;
-        const diffReal = obtenerValorColumna(row, ['Diferencia Real', 'Cant. Pendiente']);
-        const pendienteActual = parseInt(diffReal) || 0;
-        const cantOrig = row['_CantOriginal'] || pendienteActual;
         const estFinal = row['Estado Final Mennar'] || 'Pendiente';
 
-        if (estadoSel) {
-          coincideEstado = estFinal.toLowerCase() === estadoSel.toLowerCase();
-        }
+        if (estadoSel) coincideEstado = estFinal.toLowerCase() === estadoSel.toLowerCase();
 
         return coincideBusqueda && coincideMes && coincideBodega && coincideCliente && coincideInventario && coincideCedi && coincideEstado;
       });
@@ -810,13 +819,12 @@
           cambiosExistentes = JSON.parse(localStorage.getItem(CHANGES_KEY)) || {};
         } catch(e) {}
 
-        // REGLA 1: REVERSIÓN (Si se ingresa un número negativo)
+        // REGLA 1: REVERSIÓN (Número negativo)
         if (cantidadIngresada < 0) {
           item['Diferencia Real'] = cantOriginal;
           item['Estado Final Mennar'] = 'Pendiente';
           delete item['Fecha y hora cuando se entrega del Pendiente'];
 
-          // Borrar la modificación del almacenamiento persistente
           delete cambiosExistentes[idUnico];
           localStorage.setItem(CHANGES_KEY, JSON.stringify(cambiosExistentes));
           
@@ -824,16 +832,15 @@
           return;
         }
 
-        // CÁLCULO DE SALDO Y ESTADO
         const saldoRestante = Math.max(0, cantOriginal - cantidadIngresada);
         item['Diferencia Real'] = saldoRestante;
 
         let estadoFinal = 'Pendiente';
         if (cantidadIngresada >= cantOriginal || saldoRestante === 0) {
-          // REGLA 3: TOTALIDAD
+          // REGLA 3: TOTALIDAD -> Subsanado
           estadoFinal = 'Subsanado';
         } else if (cantidadIngresada > 0 && saldoRestante < cantOriginal) {
-          // REGLA 2: PARCIAL
+          // REGLA 2: INFERIOR -> Pendiente Parcial
           estadoFinal = 'Pendiente Parcial';
         }
 
@@ -842,7 +849,6 @@
         item['Fecha y hora cuando se entrega del Pendiente'] = fechaEntrega;
         item['Estado Final Mennar'] = estadoFinal;
 
-        // Guardar modificación persistente
         cambiosExistentes[idUnico] = {
           diff: saldoRestante,
           est: estadoFinal,
@@ -875,14 +881,12 @@
         ? `Pendientes_Filtrados_${new Date().toISOString().slice(0,10)}.csv`
         : `Pendientes_Completo_${new Date().toISOString().slice(0,10)}.csv`;
 
-      const link = document.styleSheets ? document.createElement('a') : null;
-      if (link) {
-        link.setAttribute('href', url);
-        link.setAttribute('download', nombreArchivo);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      }
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('download', nombreArchivo);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
     }
   </script>
 </body>
