@@ -209,7 +209,7 @@
         <h3 style="margin: 0; font-size: 13px;">Registros</h3>
         <button class="btn-filter-export" onclick="exportarCSV(true)">📥 Descargar Filtro Actual (CSV/Excel)</button>
       </div>
-      <div class="stats" id="infoContador">Cargando datos automáticos...</div>
+      <div class="stats" id="infoContador">Sincronizando reportes e inventario...</div>
     </div>
     
     <div class="table-container">
@@ -258,23 +258,24 @@
     const ARCHIVO_INVENTARIO = 'inventario.csv';
 
     window.addEventListener('DOMContentLoaded', async () => {
+      // Siempre ejecutamos la carga automática al abrir o refrescar
       await cargarArchivosAutomaticos();
     });
 
     async function cargarArchivosAutomaticos() {
       document.getElementById('infoContador').textContent = 'Sincronizando reportes e inventario...';
       try {
-        const timestamp = '?v=' + new Date().getTime();
+        const timestamp = '?t=' + new Date().getTime();
         const decoder = new TextDecoder('iso-8859-1');
 
-        // 1. Descargar e integrar Reporte Principal de Pendientes
+        // 1. Cargar Pendientes
         const respPend = await fetch('./' + encodeURIComponent(ARCHIVO_PENDIENTES) + timestamp);
-        if (!respPend.ok) throw new Error('No se pudo abrir ' + ARCHIVO_PENDIENTES);
+        if (!respPend.ok) throw new Error('No se pudo encontrar ' + ARCHIVO_PENDIENTES);
         
         const bufferPend = await respPend.arrayBuffer();
         const textoPend = decoder.decode(bufferPend);
         
-        const resPend = parsearCSV(textoPend);
+        const resPend = parsearCSV(textoPend, 'pendientes');
         cabeceras = resPend.cabeceras;
         datosPendientes = resPend.filas;
 
@@ -285,7 +286,7 @@
           cabeceras.push('Inventario BODEGA PRINCIPAL CEDI');
         }
 
-        // Recuperar ajustes previos guardados manualmente en LocalStorage
+        // Fusionar cambios de subsanación previa guardados en localStorage
         const dataGuardada = localStorage.getItem(STORAGE_KEY);
         if (dataGuardada) {
           try {
@@ -303,7 +304,6 @@
               }
             });
 
-            // Reaplicar cambios manuales a la lista fresca
             datosPendientes.forEach(row => {
               const doc = obtenerValorColumna(row, ['Documento']);
               const cod = obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo']);
@@ -314,20 +314,19 @@
                 if (mapaAjustes[clave].fecha) row['Fecha y hora cuando se entrega del Pendiente'] = mapaAjustes[clave].fecha;
               }
             });
-          } catch(e) { console.warn('No se pudieron fusionar ajustes guardados', e); }
+          } catch(e) { console.warn('Error al restaurar entregas', e); }
         }
 
-        // 2. Descargar y realizar cruce AUTOMÁTICO de Inventario
-        try {
-          const respInv = await fetch('./' + encodeURIComponent(ARCHIVO_INVENTARIO) + timestamp);
-          if (respInv.ok) {
-            const bufferInv = await respInv.arrayBuffer();
-            const textoInv = decoder.decode(bufferInv);
-            const resInv = parsearCSV(textoInv);
-            procesarCruzeInventario(resInv.filas);
-          }
-        } catch (eInv) {
-          console.warn('No se pudo cruzar el inventario:', eInv);
+        // 2. Cargar Inventario
+        const respInv = await fetch('./' + encodeURIComponent(ARCHIVO_INVENTARIO) + timestamp);
+        if (respInv.ok) {
+          const bufferInv = await respInv.arrayBuffer();
+          const textoInv = decoder.decode(bufferInv);
+          const resInv = parsearCSV(textoInv, 'inventario');
+          console.log('Filas de inventario leídas automáticamente:', resInv.filas.length);
+          procesarCruzeInventario(resInv.filas);
+        } else {
+          console.error('El archivo inventario.csv devolvió estado:', respInv.status);
         }
 
         guardarEnLocalStorage();
@@ -335,16 +334,22 @@
         aplicarFiltros();
       } catch (err) {
         document.getElementById('infoContador').textContent = 'Error al sincronizar datos automáticos.';
-        console.error(err);
+        console.error('Error durante la sincronización:', err);
       }
     }
 
-    function parsearCSV(texto) {
+    function parsearCSV(texto, tipo = 'general') {
       const lineas = texto.split(/\r\n|\n/);
       if (lineas.length === 0) return { cabeceras: [], filas: [] };
 
-      const primeraLinea = lineas[0];
-      const separador = primeraLinea.includes(';') ? ';' : (primeraLinea.includes('\t') ? '\t' : ',');
+      // Detectar separador automáticamente
+      let primeraLinea = lineas[0];
+      let separador = ';';
+      if ((primeraLinea.match(/,/g) || []).length > (primeraLinea.match(/;/g) || []).length) {
+        separador = ',';
+      } else if (primeraLinea.includes('\t')) {
+        separador = '\t';
+      }
 
       const parseLinea = (linea) => {
         const resultado = [];
@@ -369,14 +374,26 @@
       const limpiarValor = (val) => val.trim().replace(/^"|"$/g, '').replace(/[\u200B-\u200D\uFEFF]/g, '');
 
       let filaEncabezadoIndex = 0;
-      for (let i = 0; i < Math.min(10, lineas.length); i++) {
+      
+      // Buscar la fila de encabezados correcta según el tipo de archivo
+      for (let i = 0; i < Math.min(15, lineas.length); i++) {
         const lineaLower = lineas[i].toLowerCase();
-        if (
-          (lineaLower.includes('bodega') || lineaLower.includes('bodega encabezado')) &&
-          (lineaLower.includes('codigo') || lineaLower.includes('código'))
-        ) {
-          filaEncabezadoIndex = i;
-          break;
+        if (tipo === 'pendientes') {
+          if (lineaLower.includes('bodega') && (lineaLower.includes('codigo') || lineaLower.includes('código'))) {
+            filaEncabezadoIndex = i;
+            break;
+          }
+        } else if (tipo === 'inventario') {
+          if (
+            lineaLower.includes('bodega') || 
+            lineaLower.includes('unidades') || 
+            lineaLower.includes('cantidad') || 
+            lineaLower.includes('codigo') || 
+            lineaLower.includes('código')
+          ) {
+            filaEncabezadoIndex = i;
+            break;
+          }
         }
       }
 
@@ -438,7 +455,7 @@
             let contenido = evt.target.result;
             if (contenido.charCodeAt(0) === 0xFEFF) contenido = contenido.substring(1);
             
-            const resultado = parsearCSV(contenido);
+            const resultado = parsearCSV(contenido, 'pendientes');
             cabeceras = resultado.cabeceras;
             datosPendientes = resultado.filas;
 
@@ -473,7 +490,7 @@
             let contenido = evt.target.result;
             if (contenido.charCodeAt(0) === 0xFEFF) contenido = contenido.substring(1);
             
-            const resultado = parsearCSV(contenido);
+            const resultado = parsearCSV(contenido, 'inventario');
             procesarCruzeInventario(resultado.filas);
             guardarEnLocalStorage();
             poblarSelectoresFiltro();
@@ -501,8 +518,8 @@
 
       filasInventario.forEach(row => {
         const rawBodega = obtenerValorColumna(row, ['Bodega', 'bodega', 'Nombre Bodega', 'Bodega Encabezado', 'NombreBodega']);
-        const rawCodigo = obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo', 'CodigoArticulo', 'CODIGO', 'Codigo', 'Codigo_Articulo']);
-        const rawUnidades = obtenerValorColumna(row, ['Unidades', 'unidades', 'Cantidad', 'Stock', 'Cant']);
+        const rawCodigo = obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo', 'CodigoArticulo', 'CODIGO', 'Codigo', 'Codigo_Articulo', 'CODIGO ARTICULO']);
+        const rawUnidades = obtenerValorColumna(row, ['Unidades', 'unidades', 'Cantidad', 'Stock', 'Cant', 'CANTIDAD']);
 
         const bodegaNorm = normalizarTextoClave(rawBodega);
         const codigoNorm = normalizarTextoClave(rawCodigo);
