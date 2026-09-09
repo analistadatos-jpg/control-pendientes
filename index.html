@@ -254,7 +254,6 @@
     const registrosPorPagina = 100;
     let timerDebounce = null;
 
-    // Nombres exactos de los archivos en GitHub
     const ARCHIVO_PENDIENTES = 'pendientes.csv';
     const ARCHIVO_INVENTARIO = 'inventario.csv';
 
@@ -270,12 +269,13 @@
     async function cargarArchivosAutomaticos() {
       document.getElementById('infoContador').textContent = 'Cargando datos desde GitHub...';
       try {
-        // Se añade marca de tiempo (?v=) para evitar que el navegador guarde la versión vieja en caché
         const cacheBuster = `?v=${new Date().getTime()}`;
         
         const respPend = await fetch(`./${ARCHIVO_PENDIENTES}${cacheBuster}`);
-        if (!respPend.ok) throw new Error('No se encontró pendientes.csv en GitHub');
-        const textoPend = await respPend.text();
+        if (!respPend.ok) throw new Error('No se pudo descargar pendientes.csv');
+        const bufferPend = await respPend.arrayBuffer();
+        const decoder = new TextDecoder('iso-8859-1');
+        const textoPend = decoder.decode(bufferPend);
         
         const resPend = parsearCSV(textoPend);
         cabeceras = resPend.cabeceras;
@@ -290,7 +290,8 @@
 
         const respInv = await fetch(`./${ARCHIVO_INVENTARIO}${cacheBuster}`);
         if (respInv.ok) {
-          const textoInv = await respInv.text();
+          const bufferInv = await respInv.arrayBuffer();
+          const textoInv = decoder.decode(bufferInv);
           const resInv = parsearCSV(textoInv);
           procesarCruzeInventario(resInv.filas);
         }
