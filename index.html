@@ -254,6 +254,7 @@
     const registrosPorPagina = 100;
     let timerDebounce = null;
 
+    // Nombre exacto de los archivos en tu repositorio
     const ARCHIVO_PENDIENTES = 'pendientes.csv';
     const ARCHIVO_INVENTARIO = 'inventario.csv';
 
@@ -271,8 +272,9 @@
       try {
         const cacheBuster = `?v=${new Date().getTime()}`;
         
+        // 1. Descargar pendientes.csv con soporte ISO-8859-1
         const respPend = await fetch(`./${ARCHIVO_PENDIENTES}${cacheBuster}`);
-        if (!respPend.ok) throw new Error('No se pudo descargar pendientes.csv');
+        if (!respPend.ok) throw new Error(`No se pudo encontrar ${ARCHIVO_PENDIENTES}`);
         const bufferPend = await respPend.arrayBuffer();
         const decoder = new TextDecoder('iso-8859-1');
         const textoPend = decoder.decode(bufferPend);
@@ -288,6 +290,7 @@
           cabeceras.push('Inventario BODEGA PRINCIPAL CEDI');
         }
 
+        // 2. Descargar inventario.csv e integrar el cruce automático
         const respInv = await fetch(`./${ARCHIVO_INVENTARIO}${cacheBuster}`);
         if (respInv.ok) {
           const bufferInv = await respInv.arrayBuffer();
@@ -300,7 +303,7 @@
         poblarSelectoresFiltro();
         aplicarFiltros();
       } catch (err) {
-        document.getElementById('infoContador').textContent = 'Cargue sus archivos CSV manualmente.';
+        document.getElementById('infoContador').textContent = 'Error al cargar desde GitHub. Utilice la carga manual.';
         console.warn('Error en la carga automática:', err.message);
       }
     }
