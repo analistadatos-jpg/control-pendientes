@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Control y Subsanación de Pendientes Activos</title>
+  <!-- Cargamos PapaParse para una lectura impecable del CSV -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
   <style>
     :root {
       --primary: #0d6efd;
@@ -209,7 +211,7 @@
         <h3 style="margin: 0; font-size: 13px;">Registros</h3>
         <button class="btn-filter-export" onclick="exportarCSV(true)">📥 Descargar Filtro Actual (CSV/Excel)</button>
       </div>
-      <div class="stats" id="infoContador">Cargando datos desde GitHub...</div>
+      <div class="stats" id="infoContador">Cargando datos automáticos...</div>
     </div>
     
     <div class="table-container">
@@ -254,10 +256,6 @@
     const registrosPorPagina = 100;
     let timerDebounce = null;
 
-    // Rutas directas RAW a los archivos en tu repositorio de GitHub
-    const URL_PENDIENTES = 'https://raw.githubusercontent.com/analistadatos-jpg/control-pendientes/main/pendientes.csv';
-    const URL_INVENTARIO = 'https://raw.githubusercontent.com/analistadatos-jpg/control-pendientes/main/inventario.csv';
-
     window.addEventListener('DOMContentLoaded', async () => {
       const dataGuardada = localStorage.getItem(STORAGE_KEY);
       if (dataGuardada) {
@@ -269,105 +267,50 @@
 
     async function cargarArchivosAutomaticos() {
       document.getElementById('infoContador').textContent = 'Cargando datos desde GitHub...';
-      try {
-        const cacheBuster = `?t=${new Date().getTime()}`;
-        
-        // 1. Descargar pendientes.csv con soporte ISO-8859-1
-        const respPend = await fetch(`${URL_PENDIENTES}${cacheBuster}`);
-        if (!respPend.ok) throw new Error('No se pudo encontrar pendientes.csv en GitHub');
-        
-        const bufferPend = await respPend.arrayBuffer();
-        const decoder = new TextDecoder('iso-8859-1');
-        const textoPend = decoder.decode(bufferPend);
-        
-        const resPend = parsearCSV(textoPend);
-        cabeceras = resPend.cabeceras;
-        datosPendientes = resPend.filas;
+      
+      Papa.parse('./pendientes.csv?t=' + new Date().getTime(), {
+        download: true,
+        header: true,
+        encoding: 'ISO-8859-1',
+        skipEmptyLines: true,
+        complete: function(resultsPend) {
+          datosPendientes = resultsPend.data;
+          cabeceras = resultsPend.meta.fields || Object.keys(datosPendientes[0] || {});
 
-        if (!cabeceras.includes('Inventario Disponible en el punto de origen')) {
-          cabeceras.push('Inventario Disponible en el punto de origen');
-        }
-        if (!cabeceras.includes('Inventario BODEGA PRINCIPAL CEDI')) {
-          cabeceras.push('Inventario BODEGA PRINCIPAL CEDI');
-        }
-
-        // 2. Descargar inventario.csv e integrar el cruce automático
-        try {
-          const respInv = await fetch(`${URL_INVENTARIO}${cacheBuster}`);
-          if (respInv.ok) {
-            const bufferInv = await respInv.arrayBuffer();
-            const textoInv = decoder.decode(bufferInv);
-            const resInv = parsearCSV(textoInv);
-            procesarCruzeInventario(resInv.filas);
+          if (!cabeceras.includes('Inventario Disponible en el punto de origen')) {
+            cabeceras.push('Inventario Disponible en el punto de origen');
           }
-        } catch (eInv) {
-          console.warn('No se pudo cruzar el inventario automáticamente:', eInv);
-        }
+          if (!cabeceras.includes('Inventario BODEGA PRINCIPAL CEDI')) {
+            cabeceras.push('Inventario BODEGA PRINCIPAL CEDI');
+          }
 
-        guardarEnLocalStorage();
-        poblarSelectoresFiltro();
-        aplicarFiltros();
-      } catch (err) {
-        document.getElementById('infoContador').textContent = 'Error al cargar desde GitHub. Use la carga manual.';
-        console.error('Error en carga automática:', err.message);
-      }
+          // Cargar Inventario
+          Papa.parse('./inventario.csv?t=' + new Date().getTime(), {
+            download: true,
+            header: true,
+            encoding: 'ISO-8859-1',
+            skipEmptyLines: true,
+            complete: function(resultsInv) {
+              procesarCruzeInventario(resultsInv.data);
+              finalizarCarga();
+            },
+            error: function() {
+              console.warn('No se encontró inventario.csv automático');
+              finalizarCarga();
+            }
+          });
+        },
+        error: function(err) {
+          document.getElementById('infoContador').textContent = 'Error al cargar desde GitHub. Use la carga manual.';
+          console.error(err);
+        }
+      });
     }
 
-    function parsearCSV(texto) {
-      const lineas = texto.split(/\r\n|\n/);
-      if (lineas.length === 0) return { cabeceras: [], filas: [] };
-
-      const primeraLinea = lineas[0];
-      const separador = primeraLinea.includes(';') ? ';' : (primeraLinea.includes('\t') ? '\t' : ',');
-
-      const parseLinea = (linea) => {
-        const resultado = [];
-        let dentroComillas = false;
-        let valorActual = '';
-
-        for (let i = 0; i < linea.length; i++) {
-          const char = linea[i];
-          if (char === '"') {
-            dentroComillas = !dentroComillas;
-          } else if (char === separador && !dentroComillas) {
-            resultado.push(limpiarValor(valorActual));
-            valorActual = '';
-          } else {
-            valorActual += char;
-          }
-        }
-        resultado.push(limpiarValor(valorActual));
-        return resultado;
-      };
-
-      const limpiarValor = (val) => val.trim().replace(/^"|"$/g, '').replace(/[\u200B-\u200D\uFEFF]/g, '');
-
-      let filaEncabezadoIndex = 0;
-      for (let i = 0; i < Math.min(10, lineas.length); i++) {
-        const lineaLower = lineas[i].toLowerCase();
-        if (
-          (lineaLower.includes('bodega') || lineaLower.includes('bodega encabezado')) &&
-          (lineaLower.includes('codigo') || lineaLower.includes('código'))
-        ) {
-          filaEncabezadoIndex = i;
-          break;
-        }
-      }
-
-      const headers = parseLinea(lineas[filaEncabezadoIndex]);
-      const filas = [];
-
-      for (let i = filaEncabezadoIndex + 1; i < lineas.length; i++) {
-        if (!lineas[i].trim()) continue;
-        const valores = parseLinea(lineas[i]);
-        const filaObjeto = {};
-        headers.forEach((col, idx) => {
-          if (col) filaObjeto[col] = valores[idx] !== undefined ? valores[idx] : '';
-        });
-        filas.push(filaObjeto);
-      }
-
-      return { cabeceras: headers, filas };
+    function finalizarCarga() {
+      guardarEnLocalStorage();
+      poblarSelectoresFiltro();
+      aplicarFiltros();
     }
 
     function normalizarTextoClave(val) {
@@ -405,67 +348,42 @@
 
       document.getElementById('infoContador').textContent = 'Procesando archivo...';
 
-      setTimeout(() => {
-        const reader = new FileReader();
-        reader.onload = function(evt) {
-          try {
-            let contenido = evt.target.result;
-            if (contenido.charCodeAt(0) === 0xFEFF) contenido = contenido.substring(1);
-            
-            const resultado = parsearCSV(contenido);
-            cabeceras = resultado.cabeceras;
-            datosPendientes = resultado.filas;
+      Papa.parse(file, {
+        header: true,
+        encoding: 'ISO-8859-1',
+        skipEmptyLines: true,
+        complete: function(results) {
+          datosPendientes = results.data;
+          cabeceras = results.meta.fields;
 
-            if (!cabeceras.includes('Inventario Disponible en el punto de origen')) {
-              cabeceras.push('Inventario Disponible en el punto de origen');
-            }
-            if (!cabeceras.includes('Inventario BODEGA PRINCIPAL CEDI')) {
-              cabeceras.push('Inventario BODEGA PRINCIPAL CEDI');
-            }
-
-            guardarEnLocalStorage();
-            poblarSelectoresFiltro();
-            aplicarFiltros();
-          } catch (err) {
-            alert('Error al leer el archivo: ' + err.message);
+          if (!cabeceras.includes('Inventario Disponible en el punto de origen')) {
+            cabeceras.push('Inventario Disponible en el punto de origen');
           }
-        };
-        reader.readAsText(file, 'ISO-8859-1');
-      }, 50);
+          if (!cabeceras.includes('Inventario BODEGA PRINCIPAL CEDI')) {
+            cabeceras.push('Inventario BODEGA PRINCIPAL CEDI');
+          }
+
+          finalizarCarga();
+        }
+      });
     }
 
     function cargarInventarioManualmente() {
       const input = document.getElementById('csvInvInput');
       const file = input.files[0];
-      if (!file) {
-        alert('Por favor selecciona un archivo CSV de inventario.');
-        return;
-      }
+      if (!file) return alert('Por favor selecciona un archivo CSV de inventario.');
+      if (datosPendientes.length === 0) return alert('Carga primero el archivo de Pendientes.');
 
-      if (datosPendientes.length === 0) {
-        alert('Carga primero el archivo principal de Pendientes.');
-        return;
-      }
-
-      setTimeout(() => {
-        const reader = new FileReader();
-        reader.onload = function(evt) {
-          try {
-            let contenido = evt.target.result;
-            if (contenido.charCodeAt(0) === 0xFEFF) contenido = contenido.substring(1);
-            
-            const resultado = parsearCSV(contenido);
-            procesarCruzeInventario(resultado.filas);
-            guardarEnLocalStorage();
-            poblarSelectoresFiltro();
-            aplicarFiltros();
-            alert('Stock cargado exitosamente.');
-          } catch (err) {
-            alert('Error al cruzar inventario: ' + err.message);
-          }
-        };
-        reader.readAsText(file, 'ISO-8859-1');
-      }, 50);
+      Papa.parse(file, {
+        header: true,
+        encoding: 'ISO-8859-1',
+        skipEmptyLines: true,
+        complete: function(results) {
+          procesarCruzeInventario(results.data);
+          finalizarCarga();
+          alert('Stock cargado exitosamente.');
+        }
+      });
     }
 
     function procesarCruzeInventario(filasInventario) {
