@@ -304,11 +304,11 @@
           cabeceras.push('Inventario BODEGA PRINCIPAL CEDI');
         }
 
-        // 2. Cargar Inventario (Segunda fila encabezados, Col N = Bodega, Col B = Código Art, Col I = Unidades)
+        // 2. Cargar Inventario usando extracción de la Fila 2
         try {
           const textoInv = await obtenerTextoCSV('./' + encodeURIComponent(ARCHIVO_INVENTARIO) + timestamp);
-          const resInv = parsearCSVInventarioPosicional(textoInv);
-          procesarCruzeInventarioPosicional(resInv);
+          const filasInv = parsearInventarioFila2(textoInv);
+          procesarCruzeInventario(filasInv);
         } catch (eInv) {
           console.warn('Error al cargar inventario automático:', eInv);
         }
@@ -322,7 +322,15 @@
       }
     }
 
-    function parsearCSVInventarioPosicional(texto) {
+    function normalizarClaveSuperEstricta(val) {
+      if (!val) return '';
+      return val.toString()
+        .toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]/g, '');
+    }
+
+    function parsearInventarioFila2(texto) {
       const lineas = texto.split(/\r\n|\n/);
       if (lineas.length < 2) return [];
 
@@ -352,31 +360,42 @@
         return resultado;
       };
 
-      // Fila 2 (index 1) contiene los encabezados
+      // Buscar dinámicamente la fila de encabezado (normalmente fila 2, índice 1)
+      let headerIdx = 1;
+      let colCodigo = 1;   // Col B por defecto
+      let colUnidades = 8; // Col I por defecto
+      let colBodega = 13;  // Col N por defecto
+
+      for (let i = 0; i < Math.min(5, lineas.length); i++) {
+        const cols = parseLinea(lineas[i]).map(c => normalizarClaveSuperEstricta(c));
+        const cCod = cols.findIndex(c => c.includes('codigoarticulo') || c.includes('codigo') || c === 'codart');
+        const cUni = cols.findIndex(c => c.includes('unidades') || c.includes('stock') || c.includes('cantidad'));
+        const cBod = cols.findIndex(c => c.includes('bodega') || c.includes('punto'));
+
+        if (cCod !== -1 && cUni !== -1 && cBod !== -1) {
+          headerIdx = i;
+          colCodigo = cCod;
+          colUnidades = cUni;
+          colBodega = cBod;
+          break;
+        }
+      }
+
       const registros = [];
-      for (let i = 1; i < lineas.length; i++) {
+      for (let i = headerIdx + 1; i < lineas.length; i++) {
         if (!lineas[i].trim()) continue;
         const cols = parseLinea(lineas[i]);
         
-        // Mapeo por índice estricto
-        // Col B = Indice 1 (Codigo)
-        // Col I = Indice 8 (Unidades / Stock)
-        // Col N = Indice 13 (Bodega)
-        const codigo = cols[1] || cols[0] || '';
-        const unidades = cols[8] || cols[7] || '0';
-        const bodega = cols[13] || cols[12] || cols[cols.length - 1] || '';
+        const codigo = cols[colCodigo] !== undefined ? cols[colCodigo] : (cols[1] || '');
+        const unidades = cols[colUnidades] !== undefined ? cols[colUnidades] : (cols[8] || '0');
+        const bodega = cols[colBodega] !== undefined ? cols[colBodega] : (cols[13] || '');
 
-        registros.push({
-          bodega: bodega,
-          codigo: codigo,
-          unidades: unidades,
-          rowRaw: cols
-        });
+        registros.push({ bodega, codigo, unidades });
       }
       return registros;
     }
 
-    function procesarCruzeInventarioPosicional(filasInventario) {
+    function procesarCruzeInventario(filasInventario) {
       const mapaEstandar = {};
       const mapaNEPS = {};
       const mapaCEDI = {};
@@ -405,7 +424,6 @@
       });
 
       datosPendientes.forEach(row => {
-        // Col C = Bodega Encabezado, Col J = Codigo Articulo
         const rawBodega = obtenerValorColumna(row, ['Bodega Encabezado', 'BodegaEncabezado', 'Bodega']);
         const rawCodigo = obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo', 'CodigoArticulo']);
         const rawTipoComp = obtenerValorColumna(row, ['Tipo Comprobante', 'TipoComprobante']);
@@ -514,14 +532,6 @@
       return { cabeceras: headers, filas };
     }
 
-    function normalizarClaveSuperEstricta(val) {
-      if (!val) return '';
-      return val.toString()
-        .toLowerCase()
-        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-        .replace(/[^a-z0-9]/g, '');
-    }
-
     function obtenerValorColumna(row, posiblesNombres) {
       if (!row) return '';
       const keys = Object.keys(row);
@@ -601,8 +611,8 @@
             let contenido = evt.target.result;
             if (contenido.charCodeAt(0) === 0xFEFF) contenido = contenido.substring(1);
             
-            const resInv = parsearCSVInventarioPosicional(contenido);
-            procesarCruzeInventarioPosicional(resInv);
+            const filasInv = parsearInventarioFila2(contenido);
+            procesarCruzeInventario(filasInv);
             reaplicarSubsanaciones();
             poblarSelectoresFiltro();
             aplicarFiltros();
@@ -819,7 +829,6 @@
           cambiosExistentes = JSON.parse(localStorage.getItem(CHANGES_KEY)) || {};
         } catch(e) {}
 
-        // REGLA 1: REVERSIÓN (Número negativo)
         if (cantidadIngresada < 0) {
           item['Diferencia Real'] = cantOriginal;
           item['Estado Final Mennar'] = 'Pendiente';
@@ -837,10 +846,8 @@
 
         let estadoFinal = 'Pendiente';
         if (cantidadIngresada >= cantOriginal || saldoRestante === 0) {
-          // REGLA 3: TOTALIDAD -> Subsanado
           estadoFinal = 'Subsanado';
         } else if (cantidadIngresada > 0 && saldoRestante < cantOriginal) {
-          // REGLA 2: INFERIOR -> Pendiente Parcial
           estadoFinal = 'Pendiente Parcial';
         }
 
