@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Control y Subsanación de Pendientes Activos</title>
+  <!-- Librería SheetJS para leer archivos Excel (.xlsx, .xls) -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <style>
     :root {
       --primary: #0d6efd;
@@ -138,16 +140,16 @@
   <div class="card">
     <div class="grid-files">
       <div>
-        <label for="csvFileInput">1. Cargar Archivo de Pendientes (CSV Manual):</label>
+        <label for="csvFileInput">1. Cargar Archivo de Pendientes (CSV / Excel):</label>
         <div style="display: flex; gap: 6px;">
-          <input type="file" id="csvFileInput" accept=".csv" onclick="this.value=null;" />
+          <input type="file" id="csvFileInput" accept=".csv, .xlsx, .xls" onclick="this.value=null;" />
           <button class="btn-primary" style="width: auto; padding: 0 10px;" onclick="cargarArchivoManualmente()">Procesar</button>
         </div>
       </div>
       <div>
-        <label for="csvInvInput">2. Cargar Archivo de Inventario (CSV Manual):</label>
+        <label for="csvInvInput">2. Cargar Archivo de Inventario (Excel / CSV):</label>
         <div style="display: flex; gap: 6px;">
-          <input type="file" id="csvInvInput" accept=".csv" onclick="this.value=null;" />
+          <input type="file" id="csvInvInput" accept=".csv, .xlsx, .xls" onclick="this.value=null;" />
           <button class="btn-info" style="width: auto; padding: 0 10px;" onclick="cargarInventarioManualmente()">Cargar Stock</button>
         </div>
       </div>
@@ -559,48 +561,90 @@
       document.getElementById('infoContador').textContent = 'Procesando archivo...';
 
       setTimeout(() => {
+        const esExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
         const reader = new FileReader();
-        reader.onload = async function(evt) {
-          try {
-            let contenido = evt.target.result;
-            if (contenido.charCodeAt(0) === 0xFEFF) contenido = contenido.substring(1);
-            
-            parsearCSVFast(contenido);
-            await sincronizarDesdeNube();
-            poblarSelectoresFiltro();
-            aplicarFiltros();
-          } catch (err) {
-            alert('Error al leer el archivo: ' + err.message);
-          }
-        };
-        reader.readAsText(file, 'ISO-8859-1');
+
+        if (esExcel) {
+          reader.onload = async function(e) {
+            try {
+              const data = new Uint8Array(e.target.result);
+              const workbook = XLSX.read(data, { type: 'array' });
+              const firstSheet = workbook.SheetNames[0];
+              const csvText = XLSX.utils.sheet_to_csv(workbook.Sheets[firstSheet], { FS: ';' });
+              
+              parsearCSVFast(csvText);
+              await sincronizarDesdeNube();
+              poblarSelectoresFiltro();
+              aplicarFiltros();
+            } catch (err) {
+              alert('Error al leer el archivo Excel: ' + err.message);
+            }
+          };
+          reader.readAsArrayBuffer(file);
+        } else {
+          reader.onload = async function(evt) {
+            try {
+              let contenido = evt.target.result;
+              if (contenido.charCodeAt(0) === 0xFEFF) contenido = contenido.substring(1);
+              
+              parsearCSVFast(contenido);
+              await sincronizarDesdeNube();
+              poblarSelectoresFiltro();
+              aplicarFiltros();
+            } catch (err) {
+              alert('Error al leer el archivo: ' + err.message);
+            }
+          };
+          reader.readAsText(file, 'ISO-8859-1');
+        }
       }, 30);
     }
 
     function cargarInventarioManualmente() {
       const input = document.getElementById('csvInvInput');
       const file = input.files[0];
-      if (!file) return alert('Por favor selecciona un archivo CSV de inventario.');
+      if (!file) return alert('Por favor selecciona un archivo de inventario (CSV o Excel).');
       if (datosPendientes.length === 0) return alert('Carga primero el archivo de Pendientes.');
 
       document.getElementById('infoContador').textContent = 'Cruzando Inventario instantáneamente...';
 
       setTimeout(() => {
+        const esExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
         const reader = new FileReader();
-        reader.onload = async function(evt) {
-          try {
-            let contenido = evt.target.result;
-            if (contenido.charCodeAt(0) === 0xFEFF) contenido = contenido.substring(1);
-            
-            procesarInventarioFast(contenido);
-            await sincronizarDesdeNube();
-            aplicarFiltros();
-            alert('Stock cargado exitosamente.');
-          } catch (err) {
-            alert('Error al cruzar inventario: ' + err.message);
-          }
-        };
-        reader.readAsText(file, 'ISO-8859-1');
+
+        if (esExcel) {
+          reader.onload = async function(e) {
+            try {
+              const data = new Uint8Array(e.target.result);
+              const workbook = XLSX.read(data, { type: 'array' });
+              const firstSheet = workbook.SheetNames[0];
+              const csvText = XLSX.utils.sheet_to_csv(workbook.Sheets[firstSheet], { FS: ';' });
+              
+              procesarInventarioFast(csvText);
+              await sincronizarDesdeNube();
+              aplicarFiltros();
+              alert('Stock cargado exitosamente desde Excel.');
+            } catch (err) {
+              alert('Error al cruzar inventario Excel: ' + err.message);
+            }
+          };
+          reader.readAsArrayBuffer(file);
+        } else {
+          reader.onload = async function(evt) {
+            try {
+              let contenido = evt.target.result;
+              if (contenido.charCodeAt(0) === 0xFEFF) contenido = contenido.substring(1);
+              
+              procesarInventarioFast(contenido);
+              await sincronizarDesdeNube();
+              aplicarFiltros();
+              alert('Stock cargado exitosamente.');
+            } catch (err) {
+              alert('Error al cruzar inventario: ' + err.message);
+            }
+          };
+          reader.readAsText(file, 'ISO-8859-1');
+        }
       }, 30);
     }
 
