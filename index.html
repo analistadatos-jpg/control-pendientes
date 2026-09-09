@@ -118,7 +118,10 @@
       top: 0; 
       z-index: 1; 
       font-size: 10px;
+      cursor: pointer;
+      user-select: none;
     }
+    th:hover { background-color: #dbe2e8; }
 
     tr:nth-child(even) { background-color: #f8f9fa; }
     tr:hover { background-color: #e2e6ea; }
@@ -157,11 +160,21 @@
   </div>
 
   <div class="card">
-    <h3 style="margin: 0 0 6px 0; font-size: 13px;">Filtros de Búsqueda</h3>
+    <h3 style="margin: 0 0 6px 0; font-size: 13px;">Filtros y Ordenamiento</h3>
     <div class="grid-filters">
       <div>
         <label for="searchInput">Búsqueda General:</label>
         <input type="text" id="searchInput" placeholder="Cédula, Nombre, Documento..." oninput="debounceFiltros()">
+      </div>
+      <div>
+        <label for="selectOrdenar">Ordenar Por:</label>
+        <select id="selectOrdenar" onchange="aplicarFiltros()">
+          <option value="fecha_asc">Fecha Origen (Más Antiguo primero) ⬇️</option>
+          <option value="fecha_desc">Fecha Origen (Más Reciente primero) ⬆️</option>
+          <option value="codigo_asc">Código Artículo (A-Z)</option>
+          <option value="codigo_desc">Código Artículo (Z-A)</option>
+          <option value="mes_asc">Mes Dispensación (Cronológico)</option>
+        </select>
       </div>
       <div>
         <label for="selectMes">Mes Dispensación (Ctrl + clic):</label>
@@ -220,15 +233,15 @@
       <table id="tablaPendientes">
         <thead>
           <tr>
-            <th>Mes</th>
+            <th onclick="cambiarOrdenClick('mes_asc')">Mes ↕️</th>
             <th>Documento</th>
-            <th>Fecha Origen ⬇️</th>
+            <th onclick="cambiarOrdenClick('fecha_asc')">Fecha Origen ↕️</th>
             <th>Bodega</th>
             <th>Cliente / EPS</th>
             <th>Cédula</th>
             <th>Paciente</th>
             <th>Medicamento</th>
-            <th>Código Art.</th>
+            <th onclick="cambiarOrdenClick('codigo_asc')">Código Art. ↕️</th>
             <th>Código Cont.</th>
             <th>Cant. Pend.</th>
             <th>Inv. Origen</th>
@@ -262,6 +275,11 @@
     const ARCHIVO_PENDIENTES = 'Total_Dispensacion_Pendientes Activos.csv';
     const ARCHIVO_INVENTARIO = 'inventario.csv';
 
+    const ORDEN_MESES = {
+      'enero': 1, 'febrero': 2, 'marzo': 3, 'abril': 4, 'mayo': 5, 'junio': 6,
+      'julio': 7, 'agosto': 8, 'septiembre': 9, 'octubre': 10, 'noviembre': 11, 'diciembre': 12
+    };
+
     window.addEventListener('DOMContentLoaded', async () => {
       await cargarArchivosAutomaticos();
     });
@@ -286,13 +304,11 @@
       try {
         const timestamp = '?v=' + new Date().getTime();
 
-        // 1. Cargar Reporte de Pendientes desde GitHub
         const textoPend = await obtenerTextoCSV('./' + encodeURIComponent(ARCHIVO_PENDIENTES) + timestamp);
         const resPend = parsearCSV(textoPend, 'pendientes');
         cabeceras = resPend.cabeceras;
         datosPendientes = resPend.filas;
 
-        // Guardar la cantidad original del archivo
         datosPendientes.forEach(row => {
           const diffOrig = obtenerValorColumna(row, ['Diferencia Real', 'Cant. Pendiente', 'Cantidad Pendiente']);
           row['_CantOriginal'] = parseInt(diffOrig) || 0;
@@ -305,7 +321,6 @@
           cabeceras.push('Inventario BODEGA PRINCIPAL CEDI');
         }
 
-        // 2. Cargar Inventario
         try {
           const textoInv = await obtenerTextoCSV('./' + encodeURIComponent(ARCHIVO_INVENTARIO) + timestamp);
           const resInv = parsearCSV(textoInv, 'inventario');
@@ -314,9 +329,7 @@
           console.warn('Error al cargar inventario automático:', eInv);
         }
 
-        // 3. REAPLICAR SUBSANACIONES GUARDADAS (Persistencia Garantizada)
         reaplicarSubsanaciones();
-
         poblarSelectoresFiltro();
         aplicarFiltros();
       } catch (err) {
@@ -353,9 +366,7 @@
       if (lineas.length === 0) return { cabeceras: [], filas: [] };
 
       let separador = ';';
-      let countSemicolon = 0;
-      let countComma = 0;
-      let countTab = 0;
+      let countSemicolon = 0, countComma = 0, countTab = 0;
 
       for (let i = 0; i < Math.min(10, lineas.length); i++) {
         countSemicolon += (lineas[i].match(/;/g) || []).length;
@@ -527,10 +538,7 @@
       const mapaInventarioCEDI = {};
 
       const tiposComprobantePermitidosNEPS = [
-        'disp. mennar 2',
-        'disp. mennar 5',
-        'disp. mennar 4',
-        'bodega pendientes neps'
+        'disp. mennar 2', 'disp. mennar 5', 'disp. mennar 4', 'bodega pendientes neps'
       ].map(normalizarClaveSuperEstricta);
 
       filasInventario.forEach(row => {
@@ -634,6 +642,18 @@
       timerDebounce = setTimeout(aplicarFiltros, 300);
     }
 
+    function cambiarOrdenClick(tipoDefault) {
+      const select = document.getElementById('selectOrdenar');
+      if (select.value === tipoDefault) {
+        if (tipoDefault === 'fecha_asc') select.value = 'fecha_desc';
+        else if (tipoDefault === 'codigo_asc') select.value = 'codigo_desc';
+        else select.value = 'fecha_asc';
+      } else {
+        select.value = tipoDefault;
+      }
+      aplicarFiltros();
+    }
+
     function aplicarFiltros() {
       const busqueda = document.getElementById('searchInput').value.toLowerCase().trim();
       const opcionesMes = Array.from(document.getElementById('selectMes').selectedOptions);
@@ -644,6 +664,7 @@
       const inventarioSel = document.getElementById('selectInventario').value;
       const cediSel = document.getElementById('selectCedi').value;
       const estadoSel = document.getElementById('selectEstado').value;
+      const ordenSel = document.getElementById('selectOrdenar').value;
 
       datosFiltrados = datosPendientes.filter(row => {
         const cedula = obtenerValorColumna(row, ['Cedula Paciente', 'Cedula']);
@@ -693,10 +714,26 @@
         return coincideBusqueda && coincideMes && coincideBodega && coincideCliente && coincideInventario && coincideCedi && coincideEstado;
       });
 
+      // ALGORITMOS DE ORDENAMIENTO DINÁMICO
       datosFiltrados.sort((a, b) => {
-        const fechaA = convertirFechaParaOrdenar(obtenerValorColumna(a, ['Fecha Origen Dispensacion', 'Fecha Origen']));
-        const fechaB = convertirFechaParaOrdenar(obtenerValorColumna(b, ['Fecha Origen Dispensacion', 'Fecha Origen']));
-        return fechaA - fechaB;
+        if (ordenSel === 'fecha_asc' || ordenSel === 'fecha_desc') {
+          const fechaA = convertirFechaParaOrdenar(obtenerValorColumna(a, ['Fecha Origen Dispensacion', 'Fecha Origen']));
+          const fechaB = convertirFechaParaOrdenar(obtenerValorColumna(b, ['Fecha Origen Dispensacion', 'Fecha Origen']));
+          return ordenSel === 'fecha_asc' ? fechaA - fechaB : fechaB - fechaA;
+        } 
+        else if (ordenSel === 'codigo_asc' || ordenSel === 'codigo_desc') {
+          const codA = (obtenerValorColumna(a, ['Codigo Articulo', 'Código Artículo']) || '').toString();
+          const codB = (obtenerValorColumna(b, ['Codigo Articulo', 'Código Artículo']) || '').toString();
+          return ordenSel === 'codigo_asc' ? codA.localeCompare(codB) : codB.localeCompare(codA);
+        } 
+        else if (ordenSel === 'mes_asc') {
+          const mesA = (obtenerValorColumna(a, ['Mes_Dispensacion', 'Mes Dispensacion', 'Mes Dispensación']) || '').toLowerCase().trim();
+          const mesB = (obtenerValorColumna(b, ['Mes_Dispensacion', 'Mes Dispensacion', 'Mes Dispensación']) || '').toLowerCase().trim();
+          const valA = ORDEN_MESES[mesA] || 99;
+          const valB = ORDEN_MESES[mesB] || 99;
+          return valA - valB;
+        }
+        return 0;
       });
 
       paginaActual = 1;
@@ -806,7 +843,6 @@
           cambiosExistentes = JSON.parse(localStorage.getItem(CHANGES_KEY)) || {};
         } catch(e) {}
 
-        // REGLA 1: Número negativo revierte todo
         if (cantidadIngresada < 0) {
           item['Diferencia Real'] = cantOriginal;
           item['Estado Final Mennar'] = 'Pendiente';
@@ -819,7 +855,6 @@
           return;
         }
 
-        // REGLAS 2 y 3: Cálculo de nuevo saldo y asignación de estado
         const saldoRestante = Math.max(0, cantOriginal - cantidadIngresada);
         item['Diferencia Real'] = saldoRestante;
 
@@ -835,7 +870,6 @@
         item['Fecha y hora cuando se entrega del Pendiente'] = fechaEntrega;
         item['Estado Final Mennar'] = estadoFinal;
 
-        // Persistencia local
         cambiosExistentes[idUnico] = {
           diff: saldoRestante,
           est: estadoFinal,
