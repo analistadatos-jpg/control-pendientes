@@ -254,9 +254,9 @@
     const registrosPorPagina = 100;
     let timerDebounce = null;
 
-    // Nombres exactos de tus archivos en GitHub
-    const ARCHIVO_PENDIENTES = 'Total_Dispensacion_Pendientes Activos.csv';
-    const ARCHIVO_INVENTARIO = 'ValorizadoXls2202698125353.csv';
+    // Nombres estandarizados de los CSV en GitHub
+    const ARCHIVO_PENDIENTES = 'pendientes.csv';
+    const ARCHIVO_INVENTARIO = 'inventario.csv';
 
     window.addEventListener('DOMContentLoaded', async () => {
       const dataGuardada = localStorage.getItem(STORAGE_KEY);
@@ -268,11 +268,14 @@
     });
 
     async function cargarArchivosAutomaticos() {
-      document.getElementById('infoContador').textContent = 'Cargando archivos CSV desde la nube...';
+      document.getElementById('infoContador').textContent = 'Cargando datos actualizados desde GitHub...';
       try {
-        const respPend = await fetch(encodeURIComponent(ARCHIVO_PENDIENTES));
-        if (!respPend.ok) throw new Error('No se encontró ' + ARCHIVO_PENDIENTES);
-        const textoPend = await respPend.URIError ? await respPend.text() : await respPend.text();
+        // Parametro ?v= al final para forzar la recarga limpia si el archivo cambia en GitHub
+        const cacheBuster = `?v=${new Date().getTime()}`;
+        
+        const respPend = await fetch(`./${ARCHIVO_PENDIENTES}${cacheBuster}`);
+        if (!respPend.ok) throw new Error('No se encontró pendientes.csv');
+        const textoPend = await respPend.text();
         
         const resPend = parsearCSV(textoPend);
         cabeceras = resPend.cabeceras;
@@ -285,7 +288,7 @@
           cabeceras.push('Inventario BODEGA PRINCIPAL CEDI');
         }
 
-        const respInv = await fetch(encodeURIComponent(ARCHIVO_INVENTARIO));
+        const respInv = await fetch(`./${ARCHIVO_INVENTARIO}${cacheBuster}`);
         if (respInv.ok) {
           const textoInv = await respInv.text();
           const resInv = parsearCSV(textoInv);
@@ -296,8 +299,8 @@
         poblarSelectoresFiltro();
         aplicarFiltros();
       } catch (err) {
-        document.getElementById('infoContador').textContent = 'Suba sus archivos CSV manualmente.';
-        console.log('Error o carga manual requerida: ' + err.message);
+        document.getElementById('infoContador').textContent = 'Suba o verifique sus archivos CSV.';
+        console.warn('Carga automática fallida/requiere archivos:', err.message);
       }
     }
 
@@ -457,7 +460,7 @@
     }
 
     function procesarCruzeInventario(filasInventario) {
-      const mapaInventarioEstándar = {};
+      const mapaInventarioEstandar = {};
       const mapaInventarioNEPS = {};
       const mapaInventarioCEDI = {};
 
@@ -492,7 +495,7 @@
         } else {
           const claveEstandar = bodegaNorm + codigoNorm;
           if (claveEstandar) {
-            mapaInventarioEstándar[claveEstandar] = (mapaInventarioEstándar[claveEstandar] || 0) + numUnidades;
+            mapaInventarioEstandar[claveEstandar] = (mapaInventarioEstandar[claveEstandar] || 0) + numUnidades;
           }
         }
       });
@@ -514,8 +517,8 @@
           encontrado = true;
         } else {
           const claveEstandar = bodegaEncNorm + codArtNorm;
-          if (mapaInventarioEstándar.hasOwnProperty(claveEstandar)) {
-            stockVal = mapaInventarioEstándar[claveEstandar];
+          if (mapaInventarioEstandar.hasOwnProperty(claveEstandar)) {
+            stockVal = mapaInventarioEstandar[claveEstandar];
             encontrado = true;
           }
         }
@@ -536,7 +539,7 @@
         localStorage.setItem(STORAGE_KEY, JSON.stringify(datosPendientes));
         localStorage.setItem(STORAGE_KEY + '_headers', JSON.stringify(cabeceras));
       } catch (e) {
-        console.warn('LocalStorage excedido por volumen de datos.');
+        console.warn('LocalStorage saturado.');
       }
     }
 
@@ -556,7 +559,7 @@
     }
 
     function limpiarDatos() {
-      if (confirm('¿Borrar todos los datos cargados y restablecer?')) {
+      if (confirm('¿Borrar todos los datos locales y volver a cargar desde GitHub?')) {
         localStorage.removeItem(STORAGE_KEY);
         localStorage.removeItem(STORAGE_KEY + '_headers');
         datosPendientes = [];
