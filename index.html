@@ -304,7 +304,7 @@
           console.warn('Error al cargar inventario automático:', eInv);
         }
 
-        // 3. REAPLICAR SUBSANACIONES GUARDADAS (Persistencia Garantizada)
+        // 3. REAPLICAR SUBSANACIONES GUARDADAS (Persistencia)
         reaplicarSubsanaciones();
 
         poblarSelectoresFiltro();
@@ -581,7 +581,7 @@
     }
 
     function limpiarDatos() {
-      if (confirm('¿Desea borrar la memoria local y recargar los datos más recientes desde GitHub?')) {
+      if (confirm('¿Desea borrar la memoria local de subsanaciones y restablecer los datos de GitHub?')) {
         localStorage.removeItem(STORAGE_KEY);
         localStorage.removeItem(CHANGES_KEY);
         datosPendientes = [];
@@ -771,24 +771,27 @@
       const descripcion = obtenerValorColumna(item, ['Descripcion', 'Descripción']);
       
       const entrada = prompt(
-        `Subsanar cantidad para:\n${descripcion}\n\nPendiente actual: ${pendienteActual}\nIngrese la cantidad a entregar:`
+        `Ajustar saldo pendiente para:\n${descripcion}\n\n` +
+        `• Cantidad pendiente actual: ${pendienteActual}\n\n` +
+        `Sugerencias de ingreso:\n` +
+        ` - Para SUBSANAR (entregar todo): Ingrese 0\n` +
+        ` - Para REVERTIR A PENDIENTE: Ingrese la cantidad pendiente original (ej. 1, 2, 60)`
       );
 
       if (entrada !== null && entrada.trim() !== '' && !isNaN(entrada)) {
-        const cantidadEntregada = parseInt(entrada);
-        if (cantidadEntregada < 0) return;
+        const nuevaCantidad = parseInt(entrada);
+        if (nuevaCantidad < 0) return;
 
-        const nuevaDiferencia = Math.max(0, pendienteActual - cantidadEntregada);
-        item['Diferencia Real'] = nuevaDiferencia;
+        item['Diferencia Real'] = nuevaCantidad;
         
         const ahora = new Date();
         const fechaEntrega = ahora.toISOString().replace('T', ' ').substring(0, 19);
         item['Fecha y hora cuando se entrega del Pendiente'] = fechaEntrega;
 
-        const estadoFinal = nuevaDiferencia === 0 ? 'Subsanado' : 'Pendiente';
+        const estadoFinal = nuevaCantidad === 0 ? 'Subsanado' : 'Pendiente';
         item['Estado Final Mennar'] = estadoFinal;
 
-        // GUARDAR CAMBIO EN EL MAPA INDEPENDIENTE DE SUBSANACIONES
+        // GUARDAR CAMBIO PERMANENTE EN LOCALSTORAGE
         const doc = obtenerValorColumna(item, ['Documento']);
         const cod = obtenerValorColumna(item, ['Codigo Articulo', 'Código Artículo']);
         const idUnico = normalizarClaveSuperEstricta(doc + '_' + cod);
@@ -799,13 +802,15 @@
         } catch(e) {}
 
         cambiosExistentes[idUnico] = {
-          diff: nuevaDiferencia,
+          diff: nuevaCantidad,
           est: estadoFinal,
           fecha: fechaEntrega
         };
 
         localStorage.setItem(CHANGES_KEY, JSON.stringify(cambiosExistentes));
-        renderizarTabla();
+        
+        // Re-aplicar filtros para refrescar estado en la tabla
+        aplicarFiltros();
       }
     }
 
