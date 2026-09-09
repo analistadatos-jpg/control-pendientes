@@ -254,7 +254,7 @@
     const registrosPorPagina = 100;
     let timerDebounce = null;
 
-    // Nombres estandarizados de los CSV en GitHub
+    // Nombres exactos de los archivos en GitHub
     const ARCHIVO_PENDIENTES = 'pendientes.csv';
     const ARCHIVO_INVENTARIO = 'inventario.csv';
 
@@ -268,13 +268,13 @@
     });
 
     async function cargarArchivosAutomaticos() {
-      document.getElementById('infoContador').textContent = 'Cargando datos actualizados desde GitHub...';
+      document.getElementById('infoContador').textContent = 'Cargando datos desde GitHub...';
       try {
-        // Parametro ?v= al final para forzar la recarga limpia si el archivo cambia en GitHub
+        // Se añade marca de tiempo (?v=) para evitar que el navegador guarde la versión vieja en caché
         const cacheBuster = `?v=${new Date().getTime()}`;
         
         const respPend = await fetch(`./${ARCHIVO_PENDIENTES}${cacheBuster}`);
-        if (!respPend.ok) throw new Error('No se encontró pendientes.csv');
+        if (!respPend.ok) throw new Error('No se encontró pendientes.csv en GitHub');
         const textoPend = await respPend.text();
         
         const resPend = parsearCSV(textoPend);
@@ -299,8 +299,8 @@
         poblarSelectoresFiltro();
         aplicarFiltros();
       } catch (err) {
-        document.getElementById('infoContador').textContent = 'Suba o verifique sus archivos CSV.';
-        console.warn('Carga automática fallida/requiere archivos:', err.message);
+        document.getElementById('infoContador').textContent = 'Cargue sus archivos CSV manualmente.';
+        console.warn('Error en la carga automática:', err.message);
       }
     }
 
@@ -539,7 +539,7 @@
         localStorage.setItem(STORAGE_KEY, JSON.stringify(datosPendientes));
         localStorage.setItem(STORAGE_KEY + '_headers', JSON.stringify(cabeceras));
       } catch (e) {
-        console.warn('LocalStorage saturado.');
+        console.warn('LocalStorage excedido por capacidad.');
       }
     }
 
@@ -559,7 +559,7 @@
     }
 
     function limpiarDatos() {
-      if (confirm('¿Borrar todos los datos locales y volver a cargar desde GitHub?')) {
+      if (confirm('¿Desea borrar la memoria local y recargar los datos más recientes desde GitHub?')) {
         localStorage.removeItem(STORAGE_KEY);
         localStorage.removeItem(STORAGE_KEY + '_headers');
         datosPendientes = [];
