@@ -258,12 +258,7 @@
     const ARCHIVO_INVENTARIO = 'inventario.csv';
 
     window.addEventListener('DOMContentLoaded', async () => {
-      const dataGuardada = localStorage.getItem(STORAGE_KEY);
-      if (dataGuardada) {
-        cargarDeLocalStorage();
-      } else {
-        await cargarArchivosAutomaticos();
-      }
+      await cargarArchivosAutomaticos();
     });
 
     async function cargarArchivosAutomaticos() {
@@ -274,7 +269,7 @@
 
         // 1. Descargar e integrar Reporte Principal de Pendientes
         const respPend = await fetch('./' + encodeURIComponent(ARCHIVO_PENDIENTES) + timestamp);
-        if (!respPend.ok) throw new Error('No se pudo encontrar ' + ARCHIVO_PENDIENTES);
+        if (!respPend.ok) throw new Error('No se pudo abrir ' + ARCHIVO_PENDIENTES);
         
         const bufferPend = await respPend.arrayBuffer();
         const textoPend = decoder.decode(bufferPend);
@@ -290,23 +285,57 @@
           cabeceras.push('Inventario BODEGA PRINCIPAL CEDI');
         }
 
+        // Recuperar ajustes previos guardados manualmente en LocalStorage
+        const dataGuardada = localStorage.getItem(STORAGE_KEY);
+        if (dataGuardada) {
+          try {
+            const arrGuardado = JSON.parse(dataGuardada);
+            const mapaAjustes = {};
+            arrGuardado.forEach(item => {
+              const doc = obtenerValorColumna(item, ['Documento']);
+              const cod = obtenerValorColumna(item, ['Codigo Articulo', 'Código Artículo']);
+              if (doc && cod) {
+                mapaAjustes[doc + '_' + cod] = {
+                  diff: item['Diferencia Real'],
+                  est: item['Estado Final Mennar'],
+                  fecha: item['Fecha y hora cuando se entrega del Pendiente']
+                };
+              }
+            });
+
+            // Reaplicar cambios manuales a la lista fresca
+            datosPendientes.forEach(row => {
+              const doc = obtenerValorColumna(row, ['Documento']);
+              const cod = obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo']);
+              const clave = doc + '_' + cod;
+              if (mapaAjustes[clave]) {
+                if (mapaAjustes[clave].diff !== undefined) row['Diferencia Real'] = mapaAjustes[clave].diff;
+                if (mapaAjustes[clave].est) row['Estado Final Mennar'] = mapaAjustes[clave].est;
+                if (mapaAjustes[clave].fecha) row['Fecha y hora cuando se entrega del Pendiente'] = mapaAjustes[clave].fecha;
+              }
+            });
+          } catch(e) { console.warn('No se pudieron fusionar ajustes guardados', e); }
+        }
+
         // 2. Descargar y realizar cruce AUTOMÁTICO de Inventario
-        const respInv = await fetch('./' + encodeURIComponent(ARCHIVO_INVENTARIO) + timestamp);
-        if (respInv.ok) {
-          const bufferInv = await respInv.arrayBuffer();
-          const textoInv = decoder.decode(bufferInv);
-          const resInv = parsearCSV(textoInv);
-          procesarCruzeInventario(resInv.filas);
-        } else {
-          console.warn('El archivo inventario.csv no devolvió respuesta OK (404/CORS)');
+        try {
+          const respInv = await fetch('./' + encodeURIComponent(ARCHIVO_INVENTARIO) + timestamp);
+          if (respInv.ok) {
+            const bufferInv = await respInv.arrayBuffer();
+            const textoInv = decoder.decode(bufferInv);
+            const resInv = parsearCSV(textoInv);
+            procesarCruzeInventario(resInv.filas);
+          }
+        } catch (eInv) {
+          console.warn('No se pudo cruzar el inventario:', eInv);
         }
 
         guardarEnLocalStorage();
         poblarSelectoresFiltro();
         aplicarFiltros();
       } catch (err) {
-        document.getElementById('infoContador').textContent = 'Error al sincronizar datos automáticos. Utilice la carga manual.';
-        console.error('Carga automática interrumpida:', err);
+        document.getElementById('infoContador').textContent = 'Error al sincronizar datos automáticos.';
+        console.error(err);
       }
     }
 
@@ -471,9 +500,9 @@
       ];
 
       filasInventario.forEach(row => {
-        const rawBodega = obtenerValorColumna(row, ['Bodega', 'bodega', 'Nombre Bodega', 'Bodega Encabezado']);
-        const rawCodigo = obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo', 'CodigoArticulo', 'CODIGO', 'Codigo']);
-        const rawUnidades = obtenerValorColumna(row, ['Unidades', 'unidades', 'Cantidad', 'Stock']);
+        const rawBodega = obtenerValorColumna(row, ['Bodega', 'bodega', 'Nombre Bodega', 'Bodega Encabezado', 'NombreBodega']);
+        const rawCodigo = obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo', 'CodigoArticulo', 'CODIGO', 'Codigo', 'Codigo_Articulo']);
+        const rawUnidades = obtenerValorColumna(row, ['Unidades', 'unidades', 'Cantidad', 'Stock', 'Cant']);
 
         const bodegaNorm = normalizarTextoClave(rawBodega);
         const codigoNorm = normalizarTextoClave(rawCodigo);
@@ -481,21 +510,21 @@
         let numUnidades = parseFloat(rawUnidades.toString().replace(',', '.')) || 0;
         if (numUnidades < 0) numUnidades = 0;
 
-        if (bodegaNorm === 'bodega principal cedi') {
+        if (bodegaNorm.includes('bodega principal cedi') || bodegaNorm.includes('cedi principal') || bodegaNorm === 'cedi') {
           if (codigoNorm) {
             mapaInventarioCEDI[codigoNorm] = (mapaInventarioCEDI[codigoNorm] || 0) + numUnidades;
           }
         }
 
-        if (bodegaNorm === 'bodega pendientes neps') {
+        if (bodegaNorm.includes('bodega pendientes neps') || bodegaNorm.includes('pendientes neps')) {
           if (codigoNorm) {
             mapaInventarioNEPS[codigoNorm] = (mapaInventarioNEPS[codigoNorm] || 0) + numUnidades;
           }
-        } else {
-          const claveEstandar = bodegaNorm + codigoNorm;
-          if (claveEstandar) {
-            mapaInventarioEstandar[claveEstandar] = (mapaInventarioEstandar[claveEstandar] || 0) + numUnidades;
-          }
+        }
+
+        const claveEstandar = bodegaNorm + '_' + codigoNorm;
+        if (claveEstandar) {
+          mapaInventarioEstandar[claveEstandar] = (mapaInventarioEstandar[claveEstandar] || 0) + numUnidades;
         }
       });
 
@@ -515,20 +544,19 @@
           stockVal = mapaInventarioNEPS[codArtNorm];
           encontrado = true;
         } else {
-          const claveEstandar = bodegaEncNorm + codArtNorm;
+          const claveEstandar = bodegaEncNorm + '_' + codArtNorm;
           if (mapaInventarioEstandar.hasOwnProperty(claveEstandar)) {
             stockVal = mapaInventarioEstandar[claveEstandar];
             encontrado = true;
           }
         }
 
-        row['Inventario Disponible en el punto de origen'] = encontrado ? (stockVal > 0 ? stockVal : '0') : '0';
+        row['Inventario Disponible en el punto de origen'] = encontrado ? stockVal : 0;
 
         if (mapaInventarioCEDI.hasOwnProperty(codArtNorm)) {
-          const stockCedi = mapaInventarioCEDI[codArtNorm];
-          row['Inventario BODEGA PRINCIPAL CEDI'] = stockCedi > 0 ? stockCedi : '0';
+          row['Inventario BODEGA PRINCIPAL CEDI'] = mapaInventarioCEDI[codArtNorm];
         } else {
-          row['Inventario BODEGA PRINCIPAL CEDI'] = '0';
+          row['Inventario BODEGA PRINCIPAL CEDI'] = 0;
         }
       });
     }
@@ -539,21 +567,6 @@
         localStorage.setItem(STORAGE_KEY + '_headers', JSON.stringify(cabeceras));
       } catch (e) {
         console.warn('LocalStorage excedido por capacidad.');
-      }
-    }
-
-    function cargarDeLocalStorage() {
-      const dataGuardada = localStorage.getItem(STORAGE_KEY);
-      const headersGuardados = localStorage.getItem(STORAGE_KEY + '_headers');
-      if (dataGuardada) {
-        try {
-          datosPendientes = JSON.parse(dataGuardada);
-          if (headersGuardados) cabeceras = JSON.parse(headersGuardados);
-          poblarSelectoresFiltro();
-          aplicarFiltros();
-        } catch (e) {
-          console.error('Error al cargar datos guardados', e);
-        }
       }
     }
 
@@ -629,7 +642,7 @@
         const coincideBodega = !bodegaSel || bodRow === bodegaSel;
         const coincideCliente = !clienteSel || cliRow === clienteSel;
 
-        const stockActual = parseFloat(row['Inventario Disponible en el punto de origen'] || row['Inventario Disponible'] || '0');
+        const stockActual = parseFloat(row['Inventario Disponible en el punto de origen'] || '0');
         let coincideInventario = true;
         if (inventarioSel === 'con_stock') {
           coincideInventario = stockActual > 0;
@@ -696,8 +709,8 @@
         if (fechaOrigen.includes(' ')) fechaOrigen = fechaOrigen.split(' ')[0];
         if (fechaOrigen.includes(',')) fechaOrigen = fechaOrigen.split(',')[0];
 
-        const inventarioDisp = row['Inventario Disponible en el punto de origen'] || row['Inventario Disponible'] || '0';
-        const inventarioCedi = row['Inventario BODEGA PRINCIPAL CEDI'] || '0';
+        const inventarioDisp = row['Inventario Disponible en el punto de origen'] !== undefined ? row['Inventario Disponible en el punto de origen'] : 0;
+        const inventarioCedi = row['Inventario BODEGA PRINCIPAL CEDI'] !== undefined ? row['Inventario BODEGA PRINCIPAL CEDI'] : 0;
 
         const tr = document.createElement('tr');
         tr.innerHTML = `
