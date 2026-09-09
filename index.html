@@ -122,7 +122,7 @@
 
     .actions-bar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; }
     .pagination { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; }
-    .stats { font-size: 11px; color: var(--secondary); }
+    .stats { font-size: 11px; color: var(--secondary); font-weight: bold; }
   </style>
 </head>
 <body>
@@ -209,7 +209,7 @@
         <h3 style="margin: 0; font-size: 13px;">Registros</h3>
         <button class="btn-filter-export" onclick="exportarCSV(true)">📥 Descargar Filtro Actual (CSV/Excel)</button>
       </div>
-      <div class="stats" id="infoContador">Cargando datos automáticos...</div>
+      <div class="stats" id="infoContador">Cargando datos desde GitHub...</div>
     </div>
     
     <div class="table-container">
@@ -254,9 +254,9 @@
     const registrosPorPagina = 100;
     let timerDebounce = null;
 
-    // Nombre exacto de los archivos en tu repositorio
-    const ARCHIVO_PENDIENTES = 'pendientes.csv';
-    const ARCHIVO_INVENTARIO = 'inventario.csv';
+    // Rutas directas RAW a los archivos en tu repositorio de GitHub
+    const URL_PENDIENTES = 'https://raw.githubusercontent.com/analistadatos-jpg/control-pendientes/main/pendientes.csv';
+    const URL_INVENTARIO = 'https://raw.githubusercontent.com/analistadatos-jpg/control-pendientes/main/inventario.csv';
 
     window.addEventListener('DOMContentLoaded', async () => {
       const dataGuardada = localStorage.getItem(STORAGE_KEY);
@@ -270,11 +270,12 @@
     async function cargarArchivosAutomaticos() {
       document.getElementById('infoContador').textContent = 'Cargando datos desde GitHub...';
       try {
-        const cacheBuster = `?v=${new Date().getTime()}`;
+        const cacheBuster = `?t=${new Date().getTime()}`;
         
         // 1. Descargar pendientes.csv con soporte ISO-8859-1
-        const respPend = await fetch(`./${ARCHIVO_PENDIENTES}${cacheBuster}`);
-        if (!respPend.ok) throw new Error(`No se pudo encontrar ${ARCHIVO_PENDIENTES}`);
+        const respPend = await fetch(`${URL_PENDIENTES}${cacheBuster}`);
+        if (!respPend.ok) throw new Error('No se pudo encontrar pendientes.csv en GitHub');
+        
         const bufferPend = await respPend.arrayBuffer();
         const decoder = new TextDecoder('iso-8859-1');
         const textoPend = decoder.decode(bufferPend);
@@ -291,20 +292,24 @@
         }
 
         // 2. Descargar inventario.csv e integrar el cruce automático
-        const respInv = await fetch(`./${ARCHIVO_INVENTARIO}${cacheBuster}`);
-        if (respInv.ok) {
-          const bufferInv = await respInv.arrayBuffer();
-          const textoInv = decoder.decode(bufferInv);
-          const resInv = parsearCSV(textoInv);
-          procesarCruzeInventario(resInv.filas);
+        try {
+          const respInv = await fetch(`${URL_INVENTARIO}${cacheBuster}`);
+          if (respInv.ok) {
+            const bufferInv = await respInv.arrayBuffer();
+            const textoInv = decoder.decode(bufferInv);
+            const resInv = parsearCSV(textoInv);
+            procesarCruzeInventario(resInv.filas);
+          }
+        } catch (eInv) {
+          console.warn('No se pudo cruzar el inventario automáticamente:', eInv);
         }
 
         guardarEnLocalStorage();
         poblarSelectoresFiltro();
         aplicarFiltros();
       } catch (err) {
-        document.getElementById('infoContador').textContent = 'Error al cargar desde GitHub. Utilice la carga manual.';
-        console.warn('Error en la carga automática:', err.message);
+        document.getElementById('infoContador').textContent = 'Error al cargar desde GitHub. Use la carga manual.';
+        console.error('Error en carga automática:', err.message);
       }
     }
 
