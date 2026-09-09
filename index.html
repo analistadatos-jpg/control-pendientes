@@ -133,7 +133,7 @@
 </head>
 <body>
 
-  <h1>Control y Subsanación de Pendientes Activos</h1>
+  <h1>Control y Subsanación de Pendientes Activos (Sincronizado en Nube ☁️)</h1>
 
   <div class="card">
     <div class="grid-files">
@@ -226,7 +226,7 @@
         <h3 style="margin: 0; font-size: 13px;">Registros</h3>
         <button class="btn-filter-export" onclick="exportarCSV(true)">📥 Descargar Filtro Actual (CSV/Excel)</button>
       </div>
-      <div class="stats" id="infoContador">Sincronizando reportes e inventario...</div>
+      <div class="stats" id="infoContador">Sincronizando con Google Sheets...</div>
     </div>
     
     <div class="table-container">
@@ -262,6 +262,9 @@
   </div>
 
   <script>
+    // URL DE TU APLICACIÓN WEB DE GOOGLE APPS SCRIPT
+    const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxHzhqkIySVU1v-QFZnJjPoXVW83pg40X7orwR5d96qs3DWyEBfe3Wl9mwAsnE9AMIr/exec';
+
     const STORAGE_KEY = 'app_pendientes_data';
     const CHANGES_KEY = 'app_pendientes_subsanaciones';
     let datosPendientes = [];
@@ -314,7 +317,6 @@
         const textoPend = await obtenerTextoCSV('./' + encodeURIComponent(ARCHIVO_PENDIENTES) + timestamp);
         
         parsearCSVFast(textoPend);
-        reaplicarSubsanaciones();
 
         try {
           const textoInv = await obtenerTextoCSV('./' + encodeURIComponent(ARCHIVO_INVENTARIO) + timestamp);
@@ -323,12 +325,82 @@
           console.warn('Error al cargar inventario automático:', eInv);
         }
 
-        reaplicarSubsanaciones();
+        // Descargar el estado global actualizado desde Google Sheets
+        await sincronizarDesdeNube();
+
         poblarSelectoresFiltro();
         aplicarFiltros();
       } catch (err) {
         document.getElementById('infoContador').textContent = 'Cargue los datos manualmente si es necesario.';
         console.error('Error durante la carga inicial:', err);
+      }
+    }
+
+    async function sincronizarDesdeNube() {
+      if (!WEB_APP_URL) {
+        reaplicarSubsanacionesLocal();
+        return;
+      }
+
+      try {
+        const resp = await fetch(WEB_APP_URL);
+        if (resp.ok) {
+          const mapaAjustes = await resp.json();
+          localStorage.setItem(CHANGES_KEY, JSON.stringify(mapaAjustes));
+          
+          datosPendientes.forEach(row => {
+            const doc = obtenerValorColumna(row, ['Documento']);
+            const cod = obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo']);
+            const idUnico = normalizarClaveSuperEstricta(doc + '_' + cod);
+
+            if (mapaAjustes[idUnico]) {
+              const ajuste = mapaAjustes[idUnico];
+              row['Diferencia Real'] = ajuste.diff;
+              row['Estado Final Mennar'] = ajuste.est;
+              row['Fecha y hora cuando se entrega del Pendiente'] = ajuste.fecha;
+            }
+          });
+        }
+      } catch (err) {
+        console.warn('Error al conectar con Google Sheets, usando backup local:', err);
+        reaplicarSubsanacionesLocal();
+      }
+    }
+
+    function reaplicarSubsanacionesLocal() {
+      const cambiosGuardados = localStorage.getItem(CHANGES_KEY);
+      if (!cambiosGuardados) return;
+
+      try {
+        const mapaAjustes = JSON.parse(cambiosGuardados);
+        datosPendientes.forEach(row => {
+          const doc = obtenerValorColumna(row, ['Documento']);
+          const cod = obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo']);
+          const idUnico = normalizarClaveSuperEstricta(doc + '_' + cod);
+
+          if (mapaAjustes[idUnico]) {
+            const ajuste = mapaAjustes[idUnico];
+            row['Diferencia Real'] = ajuste.diff;
+            row['Estado Final Mennar'] = ajuste.est;
+            row['Fecha y hora cuando se entrega del Pendiente'] = ajuste.fecha;
+          }
+        });
+      } catch (e) {
+        console.error('Error al reaplicar subsanaciones locales:', e);
+      }
+    }
+
+    async function enviarCambioANube(payload) {
+      if (!WEB_APP_URL) return;
+      try {
+        await fetch(WEB_APP_URL, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      } catch (e) {
+        console.error('Error al enviar actualización a Google Sheets:', e);
       }
     }
 
@@ -450,29 +522,6 @@
       }
     }
 
-    function reaplicarSubsanaciones() {
-      const cambiosGuardados = localStorage.getItem(CHANGES_KEY);
-      if (!cambiosGuardados) return;
-
-      try {
-        const mapaAjustes = JSON.parse(cambiosGuardados);
-        datosPendientes.forEach(row => {
-          const doc = obtenerValorColumna(row, ['Documento']);
-          const cod = obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo']);
-          const idUnico = normalizarClaveSuperEstricta(doc + '_' + cod);
-
-          if (mapaAjustes[idUnico]) {
-            const ajuste = mapaAjustes[idUnico];
-            row['Diferencia Real'] = ajuste.diff;
-            row['Estado Final Mennar'] = ajuste.est;
-            row['Fecha y hora cuando se entrega del Pendiente'] = ajuste.fecha;
-          }
-        });
-      } catch (e) {
-        console.error('Error al reaplicar subsanaciones:', e);
-      }
-    }
-
     function obtenerValorColumna(row, posiblesNombres) {
       if (!row) return '';
       const keys = Object.keys(row);
@@ -507,13 +556,13 @@
 
       setTimeout(() => {
         const reader = new FileReader();
-        reader.onload = function(evt) {
+        reader.onload = async function(evt) {
           try {
             let contenido = evt.target.result;
             if (contenido.charCodeAt(0) === 0xFEFF) contenido = contenido.substring(1);
             
             parsearCSVFast(contenido);
-            reaplicarSubsanaciones();
+            await sincronizarDesdeNube();
             poblarSelectoresFiltro();
             aplicarFiltros();
           } catch (err) {
@@ -534,13 +583,13 @@
 
       setTimeout(() => {
         const reader = new FileReader();
-        reader.onload = function(evt) {
+        reader.onload = async function(evt) {
           try {
             let contenido = evt.target.result;
             if (contenido.charCodeAt(0) === 0xFEFF) contenido = contenido.substring(1);
             
             procesarInventarioFast(contenido);
-            reaplicarSubsanaciones();
+            await sincronizarDesdeNube();
             aplicarFiltros();
             alert('Stock cargado exitosamente.');
           } catch (err) {
@@ -796,6 +845,7 @@
           delete cambiosExistentes[idUnico];
           localStorage.setItem(CHANGES_KEY, JSON.stringify(cambiosExistentes));
 
+          enviarCambioANube({ idUnico: idUnico, accion: 'borrar' });
           aplicarFiltros();
           return;
         }
@@ -822,6 +872,15 @@
         };
 
         localStorage.setItem(CHANGES_KEY, JSON.stringify(cambiosExistentes));
+
+        enviarCambioANube({
+          idUnico: idUnico,
+          diff: saldoRestante,
+          est: estadoFinal,
+          fecha: fechaEntrega,
+          accion: 'guardar'
+        });
+
         aplicarFiltros();
       }
     }
