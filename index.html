@@ -260,7 +260,13 @@
     let timerDebounce = null;
 
     const ARCHIVO_PENDIENTES = 'Total_Dispensacion_Pendientes Activos.csv';
-    const ARCHIVO_INVENTARIO = 'inventario.csv';
+    
+    // Nombres de archivos posibles para buscar automáticamente el Inventario
+    const ARCHIVOS_INVENTARIO_POSIBLES = [
+      'inventario.csv',
+      'ValorizadoXls2202698125353.csv',
+      'inventario_valorizado.csv'
+    ];
 
     window.addEventListener('DOMContentLoaded', async () => {
       await cargarArchivosAutomaticos();
@@ -321,13 +327,20 @@
           cabeceras.push('Inventario BODEGA PRINCIPAL CEDI');
         }
 
-        // 2. Cargar Inventario
-        try {
-          const textoInv = await obtenerTextoCSV('./' + encodeURIComponent(ARCHIVO_INVENTARIO) + timestamp);
+        // 2. Intentar cargar Inventario probando nombres conocidos de archivos
+        let textoInv = null;
+        for (const nombreInv of ARCHIVOS_INVENTARIO_POSIBLES) {
+          try {
+            textoInv = await obtenerTextoCSV('./' + encodeURIComponent(nombreInv) + timestamp);
+            if (textoInv) break;
+          } catch(e) {}
+        }
+
+        if (textoInv) {
           const filasInv = parsearInventarioFila2(textoInv);
           procesarCruzeInventario(filasInv);
-        } catch (eInv) {
-          console.warn('Error al cargar inventario automático:', eInv);
+        } else {
+          console.warn('No se encontró archivo automático de inventario. Cargar manualmente.');
         }
 
         reaplicarSubsanaciones();
@@ -353,7 +366,6 @@
       if (countComma > countSemicolon && countComma > countTab) separador = ',';
       else if (countTab > countSemicolon && countTab > countComma) separador = '\t';
 
-      // Reconstruir líneas respetando campos multilínea entre comillas
       const lineasProcesadas = [];
       let lineaAcumulada = '';
       let dentroComillas = false;
@@ -443,9 +455,9 @@
         return resultado;
       };
 
-      let colCodigo = 1;   // Col B (Fila 2)
-      let colUnidades = 8; // Col I (Fila 2)
-      let colBodega = 13;  // Col N (Fila 2)
+      let colCodigo = 1;   // Col B (Índice 1)
+      let colUnidades = 8; // Col I (Índice 8)
+      let colBodega = 13;  // Col N (Índice 13)
 
       for (let i = 0; i < Math.min(5, lineasRaw.length); i++) {
         const cols = parseLinea(lineasRaw[i]).map(c => normalizarClaveSuperEstricta(c));
@@ -481,6 +493,7 @@
       const mapaEstandar = {};
       const mapaNEPS = {};
       const mapaCEDI = {};
+      const mapaPorCodigo = {};
 
       const permitidosNEPS = [
         'disp mennar 2', 'disp mennar 5', 'disp mennar 4', 'bodega pendientes neps'
@@ -503,6 +516,11 @@
 
         const clave = bodegaNorm + '_' + codigoNorm;
         if (clave) mapaEstandar[clave] = (mapaEstandar[clave] || 0) + stock;
+
+        // Registro respaldo por código general
+        if (codigoNorm) {
+          mapaPorCodigo[codigoNorm] = (mapaPorCodigo[codigoNorm] || 0) + stock;
+        }
       });
 
       datosPendientes.forEach(row => {
@@ -525,6 +543,18 @@
           if (mapaEstandar.hasOwnProperty(claveMatch)) {
             stockVal = mapaEstandar[claveMatch];
             encontrado = true;
+          } else {
+            // Intento por aproximación de bodega (ej: "disp mennar miranda 1" -> "disp mennar")
+            for (const key in mapaEstandar) {
+              if (key.endsWith('_' + codNorm)) {
+                const bodKey = key.replace('_' + codNorm, '');
+                if (bodNorm.includes(bodKey) || bodKey.includes(bodNorm)) {
+                  stockVal = mapaEstandar[key];
+                  encontrado = true;
+                  break;
+                }
+              }
+            }
           }
         }
 
