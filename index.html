@@ -286,16 +286,16 @@
       try {
         const timestamp = '?v=' + new Date().getTime();
 
-        // 1. Cargar Reporte de Pendientes desde GitHub
+        // 1. Cargar Reporte de Pendientes
         const textoPend = await obtenerTextoCSV('./' + encodeURIComponent(ARCHIVO_PENDIENTES) + timestamp);
         const resPend = parsearCSV(textoPend, 'pendientes');
         cabeceras = resPend.cabeceras;
         datosPendientes = resPend.filas;
 
-        // Guardar el valor inicial original para detectar entregas parciales
+        // Guardar la cantidad original inicial
         datosPendientes.forEach(row => {
-          const diffOriginal = obtenerValorColumna(row, ['Diferencia Real', 'Cant. Pendiente', 'Cantidad Pendiente']);
-          row['_CantOriginal'] = parseInt(diffOriginal) || 0;
+          const diffOrig = obtenerValorColumna(row, ['Diferencia Real', 'Cant. Pendiente', 'Cantidad Pendiente']);
+          row['_CantOriginal'] = parseInt(diffOrig) || 0;
         });
 
         if (!cabeceras.includes('Inventario Disponible en el punto de origen')) {
@@ -314,7 +314,7 @@
           console.warn('Error al cargar inventario automático:', eInv);
         }
 
-        // 3. REAPLICAR SUBSANACIONES GUARDADAS
+        // 3. Reaplicar ajustes persistentes
         reaplicarSubsanaciones();
 
         poblarSelectoresFiltro();
@@ -472,8 +472,8 @@
             datosPendientes = resultado.filas;
 
             datosPendientes.forEach(row => {
-              const diffOriginal = obtenerValorColumna(row, ['Diferencia Real', 'Cant. Pendiente', 'Cantidad Pendiente']);
-              row['_CantOriginal'] = parseInt(diffOriginal) || 0;
+              const diffOrig = obtenerValorColumna(row, ['Diferencia Real', 'Cant. Pendiente', 'Cantidad Pendiente']);
+              row['_CantOriginal'] = parseInt(diffOrig) || 0;
             });
 
             if (!cabeceras.includes('Inventario Disponible en el punto de origen')) {
@@ -686,8 +686,8 @@
         let coincideEstado = true;
         const diffReal = obtenerValorColumna(row, ['Diferencia Real', 'Cant. Pendiente']);
         const pendienteActual = parseInt(diffReal) || 0;
-        const cantOriginal = row['_CantOriginal'] || pendienteActual;
-        const estFinal = row['Estado Final Mennar'] || obtenerEstadoCalculado(pendienteActual, cantOriginal);
+        const cantOrig = row['_CantOriginal'] || pendienteActual;
+        const estFinal = row['Estado Final Mennar'] || 'Pendiente';
 
         if (estadoSel) {
           coincideEstado = estFinal.toLowerCase() === estadoSel.toLowerCase();
@@ -704,12 +704,6 @@
 
       paginaActual = 1;
       renderizarTabla();
-    }
-
-    function obtenerEstadoCalculado(cantPendienteActual, cantOriginal) {
-      if (cantPendienteActual <= 0) return 'Subsanado';
-      if (cantOriginal > 0 && cantPendienteActual < cantOriginal) return 'Pendiente Parcial';
-      return 'Pendiente';
     }
 
     function renderizarTabla() {
@@ -732,10 +726,8 @@
         const indexOriginal = datosPendientes.indexOf(row);
         const diffReal = obtenerValorColumna(row, ['Diferencia Real', 'Cant. Pendiente']);
         const cantidadPendiente = parseInt(diffReal) || 0;
-        const cantOriginal = row['_CantOriginal'] || cantidadPendiente;
 
-        // Calcular estado dinámicamente si no está forzado
-        const estadoFinal = row['Estado Final Mennar'] || obtenerEstadoCalculado(cantidadPendiente, cantOriginal);
+        const estadoFinal = row['Estado Final Mennar'] || 'Pendiente';
 
         let badgeClass = 'badge-pending';
         if (estadoFinal === 'Subsanado') badgeClass = 'badge-done';
@@ -770,7 +762,7 @@
           </td>
           <td>
             <button class="btn-subsanar" onclick="subsanar(${indexOriginal})">
-              ${estadoFinal === 'Subsanado' ? 'Ajustar' : 'Subsanar'}
+              ${estadoFinal === 'Pendiente' ? 'Subsanar' : 'Ajustar'}
             </button>
           </td>
         `;
@@ -798,36 +790,17 @@
       const descripcion = obtenerValorColumna(item, ['Descripcion', 'Descripción']);
       
       const entrada = prompt(
-        `Ajustar saldo pendiente para:\n${descripcion}\n\n` +
-        `• Cantidad pendiente actual: ${pendienteActual}\n` +
-        `• Cantidad original en registro: ${cantOriginal}\n\n` +
-        `Ingrese el NUEVO SALDO PENDIENTE:\n` +
-        ` - Para SUBSANAR COMPLETO (entregó todo): Ingrese 0\n` +
-        ` - Para ENTREGA PARCIAL (ej: de 2 entregó 1): Ingrese 1\n` +
-        ` - Para DEVOLVER A PENDIENTE COMPLETO: Ingrese ${cantOriginal}`
+        `Registrar entrega para:\n${descripcion}\n\n` +
+        `• Cantidad Pendiente Inicial: ${cantOriginal}\n` +
+        `• Cantidad Pendiente Actual: ${pendienteActual}\n\n` +
+        `REGLAS DE INGRESO:\n` +
+        ` 1. Ingrese NÚMERO NEGATIVO (ej: -2) ➡️ REVIERTE a Pendiente Activo\n` +
+        ` 2. Ingrese CANTIDAD PARCIAL (menor a ${cantOriginal}) ➡️ Pasa a Pendiente Parcial\n` +
+        ` 3. Ingrese CANTIDAD TOTAL (${cantOriginal}) ➡️ Pasa a Subsanado`
       );
 
       if (entrada !== null && entrada.trim() !== '' && !isNaN(entrada)) {
-        const nuevoSaldo = parseInt(entrada);
-        if (nuevoSaldo < 0) return;
-
-        item['Diferencia Real'] = nuevoSaldo;
-        
-        const ahora = new Date();
-        const fechaEntrega = ahora.toISOString().replace('T', ' ').substring(0, 19);
-        item['Fecha y hora cuando se entrega del Pendiente'] = fechaEntrega;
-
-        // Determinación del Estado
-        let estadoFinal = 'Pendiente';
-        if (nuevoSaldo === 0) {
-          estadoFinal = 'Subsanado';
-        } else if (nuevoSaldo < cantOriginal) {
-          estadoFinal = 'Pendiente Parcial';
-        }
-
-        item['Estado Final Mennar'] = estadoFinal;
-
-        // GUARDAR CAMBIO PERMANENTE EN LOCALSTORAGE
+        const cantidadIngresada = parseInt(entrada);
         const doc = obtenerValorColumna(item, ['Documento']);
         const cod = obtenerValorColumna(item, ['Codigo Articulo', 'Código Artículo']);
         const idUnico = normalizarClaveSuperEstricta(doc + '_' + cod);
@@ -837,14 +810,46 @@
           cambiosExistentes = JSON.parse(localStorage.getItem(CHANGES_KEY)) || {};
         } catch(e) {}
 
+        // REGLA 1: REVERSIÓN (Si se ingresa un número negativo)
+        if (cantidadIngresada < 0) {
+          item['Diferencia Real'] = cantOriginal;
+          item['Estado Final Mennar'] = 'Pendiente';
+          delete item['Fecha y hora cuando se entrega del Pendiente'];
+
+          // Borrar la modificación del almacenamiento persistente
+          delete cambiosExistentes[idUnico];
+          localStorage.setItem(CHANGES_KEY, JSON.stringify(cambiosExistentes));
+          
+          aplicarFiltros();
+          return;
+        }
+
+        // CÁLCULO DE SALDO Y ESTADO
+        const saldoRestante = Math.max(0, cantOriginal - cantidadIngresada);
+        item['Diferencia Real'] = saldoRestante;
+
+        let estadoFinal = 'Pendiente';
+        if (cantidadIngresada >= cantOriginal || saldoRestante === 0) {
+          // REGLA 3: TOTALIDAD
+          estadoFinal = 'Subsanado';
+        } else if (cantidadIngresada > 0 && saldoRestante < cantOriginal) {
+          // REGLA 2: PARCIAL
+          estadoFinal = 'Pendiente Parcial';
+        }
+
+        const ahora = new Date();
+        const fechaEntrega = ahora.toISOString().replace('T', ' ').substring(0, 19);
+        item['Fecha y hora cuando se entrega del Pendiente'] = fechaEntrega;
+        item['Estado Final Mennar'] = estadoFinal;
+
+        // Guardar modificación persistente
         cambiosExistentes[idUnico] = {
-          diff: nuevoSaldo,
+          diff: saldoRestante,
           est: estadoFinal,
           fecha: fechaEntrega
         };
 
         localStorage.setItem(CHANGES_KEY, JSON.stringify(cambiosExistentes));
-        
         aplicarFiltros();
       }
     }
@@ -870,12 +875,14 @@
         ? `Pendientes_Filtrados_${new Date().toISOString().slice(0,10)}.csv`
         : `Pendientes_Completo_${new Date().toISOString().slice(0,10)}.csv`;
 
-      const link = document.createElement('a');
-      link.setAttribute('href', url);
-      link.setAttribute('download', nombreArchivo);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      const link = document.styleSheets ? document.createElement('a') : null;
+      if (link) {
+        link.setAttribute('href', url);
+        link.setAttribute('download', nombreArchivo);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
     }
   </script>
 </body>
