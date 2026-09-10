@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Control y Subsanación de Pendientes Activos</title>
-  <!-- Librería SheetJS para leer archivos Excel (.xlsx, .xls) -->
+  <title>Control y Subsanación de Pendientes Activos - High Performance</title>
+  <!-- SheetJS CDN para lectura binaria ultra rápida -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <style>
     :root {
@@ -18,7 +18,7 @@
     }
 
     body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
       margin: 10px;
       background-color: #f4f6f9;
       color: var(--dark);
@@ -36,7 +36,7 @@
 
     .grid-filters {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
       gap: 6px;
       align-items: end;
     }
@@ -71,7 +71,9 @@
       padding: 2px;
     }
 
-    button { font-weight: 600; cursor: pointer; border: none; }
+    button { font-weight: 600; cursor: pointer; border: none; transition: opacity 0.15s; }
+    button:active { opacity: 0.8; }
+    
     .btn-primary { background-color: var(--primary); color: white; }
     .btn-info { background-color: #0b5ed7; color: white; }
     .btn-success { background-color: var(--success); color: white; }
@@ -95,6 +97,7 @@
       overflow-x: auto; 
       max-height: 550px; 
       overflow-y: auto; 
+      will-change: transform;
     }
     
     table { 
@@ -135,7 +138,7 @@
 </head>
 <body>
 
-  <h1>Control y Subsanación de Pendientes Activos (Sincronizado en Nube ☁️)</h1>
+  <h1>Control y Subsanación de Pendientes Activos ⚡ (Engine V8 Ultra-Fast)</h1>
 
   <div class="card">
     <div class="grid-files">
@@ -228,7 +231,7 @@
         <h3 style="margin: 0; font-size: 13px;">Registros</h3>
         <button class="btn-filter-export" onclick="exportarCSV(true)">📥 Descargar Filtro Actual (CSV/Excel)</button>
       </div>
-      <div class="stats" id="infoContador">Sincronizando con Google Sheets...</div>
+      <div class="stats" id="infoContador">Listo para procesar.</div>
     </div>
     
     <div class="table-container">
@@ -265,13 +268,11 @@
 
   <script>
     const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxHzhqkIySVU1v-QFZnJjPoXVW83pg40X7orwR5d96qs3DWyEBfe3Wl9mwAsnE9AMIr/exec';
-
-    const STORAGE_KEY = 'app_pendientes_data';
     const CHANGES_KEY = 'app_pendientes_subsanaciones';
+    
     let datosPendientes = [];
     let datosFiltrados = [];
     let cabeceras = [];
-    
     let paginaActual = 1;
     const registrosPorPagina = 100;
     let timerDebounce = null;
@@ -284,167 +285,122 @@
       'julio': 7, 'agosto': 8, 'septiembre': 9, 'octubre': 10, 'noviembre': 11, 'diciembre': 12
     };
 
-    window.addEventListener('DOMContentLoaded', async () => {
-      await cargarArchivosAutomaticos();
+    // Cache Hash O(1) de normalización
+    const normCache = Object.create(null);
+    function norm(val) {
+      if (!val) return '';
+      if (normCache[val] !== undefined) return normCache[val];
+      const res = val.toString().toLowerCase().replace(/[^a-z0-9]/g, '');
+      normCache[val] = res;
+      return res;
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      cargarArchivosAutomaticos();
     });
 
-    async function obtenerTextoCSV(urlFile) {
-      const resp = await fetch(urlFile);
-      if (!resp.ok) throw new Error('HTTP status ' + resp.status + ' al descargar ' + urlFile);
-      
-      const buffer = await resp.arrayBuffer();
-      let texto = new TextDecoder('utf-8').decode(buffer);
-      if (texto.charCodeAt(0) === 0xFEFF) texto = texto.slice(1);
-      
-      if (texto.includes('')) {
-        texto = new TextDecoder('iso-8859-1').decode(buffer);
-        if (texto.charCodeAt(0) === 0xFEFF) texto = texto.slice(1);
-      }
-      return texto;
-    }
-
-    function normalizarClaveSuperEstricta(val) {
-      if (!val) return '';
-      return val.toString()
-        .toLowerCase()
-        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-        .replace(/[^a-z0-9]/g, '');
-    }
-
     async function cargarArchivosAutomaticos() {
-      document.getElementById('infoContador').textContent = 'Sincronizando reportes e inventario...';
+      document.getElementById('infoContador').textContent = '⚡ Carga ultra-rápida en ejecución...';
       try {
-        const timestamp = '?v=' + new Date().getTime();
-        const textoPend = await obtenerTextoCSV('./' + encodeURIComponent(ARCHIVO_PENDIENTES) + timestamp);
-        
-        parsearCSVFast(textoPend);
-
-        try {
-          const textoInv = await obtenerTextoCSV('./' + encodeURIComponent(ARCHIVO_INVENTARIO) + timestamp);
-          procesarInventarioFast(textoInv);
-        } catch (eInv) {
-          console.warn('Error al cargar inventario automático:', eInv);
+        const timestamp = '?v=' + Date.now();
+        const respPend = await fetch('./' + encodeURIComponent(ARCHIVO_PENDIENTES) + timestamp);
+        if (respPend.ok) {
+          const textoPend = await respPend.text();
+          parsearCSVMatriz(textoPend);
         }
 
-        await sincronizarDesdeNube();
+        try {
+          const respInv = await fetch('./' + encodeURIComponent(ARCHIVO_INVENTARIO) + timestamp);
+          if (respInv.ok) {
+            const textoInv = await respInv.text();
+            procesarInventarioUltraFast(textoInv);
+          }
+        } catch (e) { console.warn('Inventario local no encontrado.'); }
 
+        sincronizarDesdeNubeSilencioso();
         poblarSelectoresFiltro();
         aplicarFiltros();
       } catch (err) {
-        document.getElementById('infoContador').textContent = 'Cargue los datos manualmente si es necesario.';
-        console.error('Error durante la carga inicial:', err);
+        document.getElementById('infoContador').textContent = 'Seleccione un archivo manual para comenzar.';
       }
     }
 
-    async function sincronizarDesdeNube() {
-      if (!WEB_APP_URL) {
-        reaplicarSubsanacionesLocal();
-        return;
-      }
+    function sincronizarDesdeNubeSilencioso() {
+      if (!WEB_APP_URL) return reaplicarSubsanacionesLocal();
 
-      try {
-        const resp = await fetch(WEB_APP_URL);
-        if (resp.ok) {
-          const mapaAjustes = await resp.json();
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2500); // Max timeout 2.5s para no demorar la App
+
+      fetch(WEB_APP_URL, { signal: controller.signal })
+        .then(res => res.json())
+        .then(mapaAjustes => {
+          clearTimeout(timeoutId);
           localStorage.setItem(CHANGES_KEY, JSON.stringify(mapaAjustes));
-          
-          datosPendientes.forEach(row => {
-            const doc = obtenerValorColumna(row, ['Documento']);
-            const cod = obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo']);
-            const idUnico = normalizarClaveSuperEstricta(doc + '_' + cod);
+          aplicarMapaAjustes(mapaAjustes);
+          aplicarFiltros();
+        })
+        .catch(() => {
+          clearTimeout(timeoutId);
+          reaplicarSubsanacionesLocal();
+        });
+    }
 
-            if (mapaAjustes[idUnico]) {
-              const ajuste = mapaAjustes[idUnico];
-              const cantOrig = row['_CantOriginal'] || 0;
-              const cantEntregada = parseInt(ajuste.cantEntregada) || 0;
-              
-              row['Diferencia Real'] = Math.max(0, cantOrig - cantEntregada);
-              row['Estado Final Mennar'] = ajuste.est;
-              row['Fecha y hora cuando se entrega del Pendiente'] = ajuste.fecha;
-            }
-          });
+    function aplicarMapaAjustes(mapaAjustes) {
+      for (let i = 0; i < datosPendientes.length; i++) {
+        const row = datosPendientes[i];
+        const doc = obtenerValorColumna(row, ['Documento']);
+        const cod = obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo']);
+        const idUnico = norm(doc + '_' + cod);
+
+        if (mapaAjustes[idUnico]) {
+          const ajuste = mapaAjustes[idUnico];
+          const cantOrig = row['_CantOriginal'] || 0;
+          const cantEntregada = parseInt(ajuste.cantEntregada) || 0;
+
+          row['Diferencia Real'] = Math.max(0, cantOrig - cantEntregada);
+          row['Estado Final Mennar'] = ajuste.est;
+          row['Fecha y hora cuando se entrega del Pendiente'] = ajuste.fecha;
         }
-      } catch (err) {
-        console.warn('Error al conectar con Google Sheets, usando backup local:', err);
-        reaplicarSubsanacionesLocal();
       }
     }
 
     function reaplicarSubsanacionesLocal() {
-      const cambiosGuardados = localStorage.getItem(CHANGES_KEY);
-      if (!cambiosGuardados) return;
-
       try {
-        const mapaAjustes = JSON.parse(cambiosGuardados);
-        datosPendientes.forEach(row => {
-          const doc = obtenerValorColumna(row, ['Documento']);
-          const cod = obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo']);
-          const idUnico = normalizarClaveSuperEstricta(doc + '_' + cod);
-
-          if (mapaAjustes[idUnico]) {
-            const ajuste = mapaAjustes[idUnico];
-            const cantOrig = row['_CantOriginal'] || 0;
-            const cantEntregada = parseInt(ajuste.cantEntregada) || 0;
-
-            row['Diferencia Real'] = Math.max(0, cantOrig - cantEntregada);
-            row['Estado Final Mennar'] = ajuste.est;
-            row['Fecha y hora cuando se entrega del Pendiente'] = ajuste.fecha;
-          }
-        });
-      } catch (e) {
-        console.error('Error al reaplicar subsanaciones locales:', e);
-      }
+        const local = localStorage.getItem(CHANGES_KEY);
+        if (local) aplicarMapaAjustes(JSON.parse(local));
+      } catch (e) {}
     }
 
-    async function enviarCambioANube(payload) {
-      if (!WEB_APP_URL) return;
-      try {
-        await fetch(WEB_APP_URL, {
-          method: 'POST',
-          mode: 'no-cors',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-      } catch (e) {
-        console.error('Error al enviar actualización a Google Sheets:', e);
-      }
-    }
+    function parsearCSVMatriz(texto) {
+      const lineas = texto.split(/\r?\n/);
+      if (!lineas.length) return;
 
-    function parsearCSVFast(texto) {
-      const lineas = texto.split(/\r\n|\n/);
-      if (lineas.length === 0) return;
-
-      let separador = texto.includes(';') ? ';' : ',';
-
-      const parseLinea = (linea) => {
-        return linea.split(separador).map(v => v.trim().replace(/^"|"$/g, '').replace(/[\u200B-\u200D\uFEFF]/g, ''));
-      };
-
+      let sep = texto.includes(';') ? ';' : ',';
       let headerIdx = 0;
-      for (let i = 0; i < Math.min(15, lineas.length); i++) {
-        const lNorm = normalizarClaveSuperEstricta(lineas[i]);
-        if (lNorm.includes('bodega') && lNorm.includes('codigo')) {
+
+      for (let i = 0; i < Math.min(10, lineas.length); i++) {
+        const l = norm(lineas[i]);
+        if (l.includes('bodega') && l.includes('codigo')) {
           headerIdx = i;
           break;
         }
       }
 
-      cabeceras = parseLinea(lineas[headerIdx]);
-      if (!cabeceras.includes('Inventario Disponible en el punto de origen')) {
-        cabeceras.push('Inventario Disponible en el punto de origen');
-      }
-      if (!cabeceras.includes('Inventario BODEGA PRINCIPAL CEDI')) {
-        cabeceras.push('Inventario BODEGA PRINCIPAL CEDI');
-      }
+      cabeceras = lineas[headerIdx].split(sep).map(c => c.trim().replace(/^"|"$/g, ''));
+      if (!cabeceras.includes('Inventario Disponible en el punto de origen')) cabeceras.push('Inventario Disponible en el punto de origen');
+      if (!cabeceras.includes('Inventario BODEGA PRINCIPAL CEDI')) cabeceras.push('Inventario BODEGA PRINCIPAL CEDI');
 
       datosPendientes = [];
+      const numCols = cabeceras.length;
+
       for (let i = headerIdx + 1; i < lineas.length; i++) {
-        if (!lineas[i].trim()) continue;
-        const vals = parseLinea(lineas[i]);
+        const line = lineas[i];
+        if (!line) continue;
+        const vals = line.split(sep);
         const fila = {};
-        cabeceras.forEach((col, idx) => {
-          fila[col] = vals[idx] !== undefined ? vals[idx] : '';
-        });
+        for (let j = 0; j < numCols; j++) {
+          fila[cabeceras[j]] = vals[j] ? vals[j].trim().replace(/^"|"$/g, '') : '';
+        }
 
         const diffOrig = obtenerValorColumna(fila, ['Diferencia Real', 'Cant. Pendiente', 'Cantidad Pendiente']);
         fila['_CantOriginal'] = parseInt(diffOrig) || 0;
@@ -455,102 +411,69 @@
       }
     }
 
-    function procesarInventarioFast(textoCSV) {
-      const lineas = textoCSV.split(/\r\n|\n/);
-      if (lineas.length === 0) return;
+    function procesarInventarioUltraFast(texto) {
+      const lineas = texto.split(/\r?\n/);
+      if (!lineas.length) return;
 
-      let separador = textoCSV.includes(';') ? ';' : ',';
-      const mapaStockEstandar = new Map();
-      const mapaStockNEPS = new Map();
-      const mapaStockCEDI = new Map();
+      let sep = texto.includes(';') ? ';' : ',';
+      const mEstandar = new Map();
+      const mNEPS = new Map();
+      const mCEDI = new Map();
 
-      const permitidosNEPS = [
-        'disp. mennar 2', 'disp. mennar 5', 'disp. mennar 4', 'bodega pendientes neps'
-      ].map(normalizarClaveSuperEstricta);
+      const nepsPermitidos = ['dispmennar2', 'dispmennar5', 'dispmennar4', 'bodegapendientesneps'];
 
       let colCod = 1, colUni = 8, colBod = 13;
-      for (let i = 0; i < Math.min(5, lineas.length); i++) {
-        const cols = lineas[i].split(separador).map(c => normalizarClaveSuperEstricta(c));
-        const cC = cols.findIndex(c => c.includes('codigo'));
-        const cU = cols.findIndex(c => c.includes('unidades') || c.includes('stock') || c.includes('cantidad'));
-        const cB = cols.findIndex(c => c.includes('bodega'));
-        if (cC !== -1 && cU !== -1 && cB !== -1) {
-          colCod = cC; colUni = cU; colBod = cB;
-          break;
-        }
-      }
+      const headers = lineas[0].split(sep).map(c => norm(c));
+      
+      headers.forEach((h, idx) => {
+        if (h.includes('codigo')) colCod = idx;
+        if (h.includes('unidades') || h.includes('stock') || h.includes('cantidad')) colUni = idx;
+        if (h.includes('bodega')) colBod = idx;
+      });
 
       for (let i = 1; i < lineas.length; i++) {
-        if (!lineas[i].trim()) continue;
-        const cols = lineas[i].split(separador).map(v => v.trim().replace(/^"|"$/g, ''));
-        
-        const rawCod = cols[colCod] || '';
-        const rawUnidades = cols[colUni] || '0';
-        const rawBodega = cols[colBod] || '';
+        const line = lineas[i];
+        if (!line) continue;
+        const cols = line.split(sep);
 
-        const codNorm = normalizarClaveSuperEstricta(rawCod);
-        const bodNorm = normalizarClaveSuperEstricta(rawBodega);
-        let stock = parseFloat(rawUnidades.replace(',', '.')) || 0;
+        const codNorm = norm(cols[colCod]);
+        const bodNorm = norm(cols[colBod]);
+        let stock = parseFloat((cols[colUni] || '0').replace(',', '.')) || 0;
         if (stock < 0) stock = 0;
 
-        if (bodNorm.includes('cedi') || bodNorm.includes('bodegaprincipalcedi')) {
-          mapaStockCEDI.set(codNorm, (mapaStockCEDI.get(codNorm) || 0) + stock);
-        }
+        if (bodNorm.includes('cedi')) mCEDI.set(codNorm, (mCEDI.get(codNorm) || 0) + stock);
+        if (bodNorm.includes('pendientesneps')) mNEPS.set(codNorm, (mNEPS.get(codNorm) || 0) + stock);
 
-        if (bodNorm.includes('pendientesneps') || bodNorm.includes('bodegapendientesneps')) {
-          mapaStockNEPS.set(codNorm, (mapaStockNEPS.get(codNorm) || 0) + stock);
-        }
-
-        const claveHash = bodNorm + '_' + codNorm;
-        mapaStockEstandar.set(claveHash, (mapaStockEstandar.get(claveHash) || 0) + stock);
+        const key = bodNorm + '_' + codNorm;
+        mEstandar.set(key, (mEstandar.get(key) || 0) + stock);
       }
 
+      // Asignación directa O(N)
       for (let i = 0; i < datosPendientes.length; i++) {
         const row = datosPendientes[i];
-        const rawBodega = obtenerValorColumna(row, ['Bodega Encabezado', 'Bodega']);
-        const rawCodigo = obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo']);
-        const rawTipoComp = obtenerValorColumna(row, ['Tipo Comprobante']);
+        const bodNorm = norm(obtenerValorColumna(row, ['Bodega Encabezado', 'Bodega']));
+        const codNorm = norm(obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo']));
+        const tipoNorm = norm(obtenerValorColumna(row, ['Tipo Comprobante']));
 
-        const bodNorm = normalizarClaveSuperEstricta(rawBodega);
-        const codNorm = normalizarClaveSuperEstricta(rawCodigo);
-        const tipoNorm = normalizarClaveSuperEstricta(rawTipoComp);
-
-        let stockOrigen = 0;
-        if (permitidosNEPS.includes(tipoNorm) && mapaStockNEPS.has(codNorm)) {
-          stockOrigen = mapaStockNEPS.get(codNorm);
-        } else {
-          const claveHash = bodNorm + '_' + codNorm;
-          stockOrigen = mapaStockEstandar.get(claveHash) || 0;
-        }
+        let stockOrigen = nepsPermitidos.includes(tipoNorm) && mNEPS.has(codNorm) 
+          ? mNEPS.get(codNorm) 
+          : (mEstandar.get(bodNorm + '_' + codNorm) || 0);
 
         row['Inventario Disponible en el punto de origen'] = stockOrigen;
-        row['Inventario BODEGA PRINCIPAL CEDI'] = mapaStockCEDI.get(codNorm) || 0;
+        row['Inventario BODEGA PRINCIPAL CEDI'] = mCEDI.get(codNorm) || 0;
       }
     }
 
     function obtenerValorColumna(row, posiblesNombres) {
       if (!row) return '';
       const keys = Object.keys(row);
-      for (const nombre of posiblesNombres) {
-        const targetNorm = normalizarClaveSuperEstricta(nombre);
-        const matchKey = keys.find(k => normalizarClaveSuperEstricta(k) === targetNorm);
-        if (matchKey && row[matchKey] !== undefined) return row[matchKey];
-      }
-      return '';
-    }
-
-    function convertirFechaParaOrdenar(strFecha) {
-      if (!strFecha) return 0;
-      let limpia = strFecha.split(' ')[0].split(',')[0].trim();
-      let partes = limpia.includes('/') ? limpia.split('/') : limpia.split('-');
-      if (partes.length === 3) {
-        if (partes[0].length === 4) {
-          return new Date(partes[0], partes[1] - 1, partes[2]).getTime() || 0;
-        } else {
-          return new Date(partes[2], partes[1] - 1, partes[0]).getTime() || 0;
+      for (let i = 0; i < posiblesNombres.length; i++) {
+        const target = norm(posiblesNombres[i]);
+        for (let j = 0; j < keys.length; j++) {
+          if (norm(keys[j]) === target) return row[keys[j]];
         }
       }
-      return new Date(limpia).getTime() || 0;
+      return '';
     }
 
     function cargarArchivoManualmente() {
@@ -559,223 +482,95 @@
       if (!file) return;
 
       document.getElementById('infoContador').textContent = 'Procesando archivo...';
+      const reader = new FileReader();
 
-      setTimeout(() => {
-        const esExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
-        const reader = new FileReader();
-
-        if (esExcel) {
-          reader.onload = async function(e) {
-            try {
-              const data = new Uint8Array(e.target.result);
-              const workbook = XLSX.read(data, { type: 'array' });
-              const firstSheet = workbook.SheetNames[0];
-              const csvText = XLSX.utils.sheet_to_csv(workbook.Sheets[firstSheet], { FS: ';' });
-              
-              parsearCSVFast(csvText);
-              await sincronizarDesdeNube();
-              poblarSelectoresFiltro();
-              aplicarFiltros();
-            } catch (err) {
-              alert('Error al leer el archivo Excel: ' + err.message);
-            }
-          };
-          reader.readAsArrayBuffer(file);
-        } else {
-          reader.onload = async function(evt) {
-            try {
-              let contenido = evt.target.result;
-              if (contenido.charCodeAt(0) === 0xFEFF) contenido = contenido.substring(1);
-              
-              parsearCSVFast(contenido);
-              await sincronizarDesdeNube();
-              poblarSelectoresFiltro();
-              aplicarFiltros();
-            } catch (err) {
-              alert('Error al leer el archivo: ' + err.message);
-            }
-          };
-          reader.readAsText(file, 'ISO-8859-1');
-        }
-      }, 30);
+      if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+        reader.onload = e => {
+          const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array', dense: true });
+          const csv = XLSX.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]], { FS: ';' });
+          parsearCSVMatriz(csv);
+          sincronizarDesdeNubeSilencioso();
+          poblarSelectoresFiltro();
+          aplicarFiltros();
+        };
+        reader.readAsArrayBuffer(file);
+      } else {
+        reader.onload = e => {
+          parsearCSVMatriz(e.target.result);
+          sincronizarDesdeNubeSilencioso();
+          poblarSelectoresFiltro();
+          aplicarFiltros();
+        };
+        reader.readAsText(file, 'ISO-8859-1');
+      }
     }
 
     function cargarInventarioManualmente() {
       const input = document.getElementById('csvInvInput');
       const file = input.files[0];
-      if (!file) return alert('Por favor selecciona un archivo de inventario (CSV o Excel).');
-      if (datosPendientes.length === 0) return alert('Carga primero el archivo de Pendientes.');
+      if (!file) return alert('Selecciona un archivo de inventario.');
+      if (!datosPendientes.length) return alert('Carga primero el archivo de Pendientes.');
 
-      document.getElementById('infoContador').textContent = 'Cruzando Inventario instantáneamente...';
+      document.getElementById('infoContador').textContent = 'Cruzando Inventario en milisegundos...';
+      const reader = new FileReader();
 
-      setTimeout(() => {
-        const esExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
-        const reader = new FileReader();
-
-        if (esExcel) {
-          reader.onload = async function(e) {
-            try {
-              const data = new Uint8Array(e.target.result);
-              const workbook = XLSX.read(data, { type: 'array' });
-              const firstSheet = workbook.SheetNames[0];
-              const csvText = XLSX.utils.sheet_to_csv(workbook.Sheets[firstSheet], { FS: ';' });
-              
-              procesarInventarioFast(csvText);
-              await sincronizarDesdeNube();
-              aplicarFiltros();
-              alert('Stock cargado exitosamente desde Excel.');
-            } catch (err) {
-              alert('Error al cruzar inventario Excel: ' + err.message);
-            }
-          };
-          reader.readAsArrayBuffer(file);
-        } else {
-          reader.onload = async function(evt) {
-            try {
-              let contenido = evt.target.result;
-              if (contenido.charCodeAt(0) === 0xFEFF) contenido = contenido.substring(1);
-              
-              procesarInventarioFast(contenido);
-              await sincronizarDesdeNube();
-              aplicarFiltros();
-              alert('Stock cargado exitosamente.');
-            } catch (err) {
-              alert('Error al cruzar inventario: ' + err.message);
-            }
-          };
-          reader.readAsText(file, 'ISO-8859-1');
-        }
-      }, 30);
-    }
-
-    function limpiarDatos() {
-      if (confirm('¿Desea borrar la memoria local y recargar los datos más recientes desde GitHub?')) {
-        localStorage.removeItem(STORAGE_KEY);
-        localStorage.removeItem(CHANGES_KEY);
-        datosPendientes = [];
-        datosFiltrados = [];
-        cabeceras = [];
-        poblarSelectoresFiltro();
-        renderizarTabla();
-        document.getElementById('csvFileInput').value = '';
-        document.getElementById('csvInvInput').value = '';
-        cargarArchivosAutomaticos();
+      if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+        reader.onload = e => {
+          const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array', dense: true });
+          const csv = XLSX.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]], { FS: ';' });
+          procesarInventarioUltraFast(csv);
+          aplicarFiltros();
+        };
+        reader.readAsArrayBuffer(file);
+      } else {
+        reader.onload = e => {
+          procesarInventarioUltraFast(e.target.result);
+          aplicarFiltros();
+        };
+        reader.readAsText(file, 'ISO-8859-1');
       }
-    }
-
-    function poblarSelectoresFiltro() {
-      const selectMes = document.getElementById('selectMes');
-      const selectBodega = document.getElementById('selectBodega');
-      const selectCliente = document.getElementById('selectCliente');
-
-      const meses = [...new Set(datosPendientes.map(item => obtenerValorColumna(item, ['Mes_Dispensacion', 'Mes Dispensacion', 'Mes Dispensación'])).filter(Boolean))].sort();
-      const bodegas = [...new Set(datosPendientes.map(item => obtenerValorColumna(item, ['Bodega Encabezado', 'Bodega'])).filter(Boolean))].sort();
-      const clientes = [...new Set(datosPendientes.map(item => obtenerValorColumna(item, ['Razon Social Cliente', 'Cliente'])).filter(Boolean))].sort();
-
-      selectMes.innerHTML = '';
-      meses.forEach(m => selectMes.innerHTML += `<option value="${m}">${m}</option>`);
-
-      selectBodega.innerHTML = '<option value="">-- Todas las Bodegas --</option>';
-      bodegas.forEach(b => selectBodega.innerHTML += `<option value="${b}">${b}</option>`);
-
-      selectCliente.innerHTML = '<option value="">-- Todos los Clientes --</option>';
-      clientes.forEach(c => selectCliente.innerHTML += `<option value="${c}">${c}</option>`);
     }
 
     function debounceFiltros() {
       clearTimeout(timerDebounce);
-      timerDebounce = setTimeout(aplicarFiltros, 150);
-    }
-
-    function cambiarOrdenClick(tipoDefault) {
-      const select = document.getElementById('selectOrdenar');
-      if (select.value === tipoDefault) {
-        if (tipoDefault === 'fecha_asc') select.value = 'fecha_desc';
-        else if (tipoDefault === 'codigo_asc') select.value = 'codigo_desc';
-        else select.value = 'fecha_asc';
-      } else {
-        select.value = tipoDefault;
-      }
-      aplicarFiltros();
+      timerDebounce = setTimeout(aplicarFiltros, 80);
     }
 
     function aplicarFiltros() {
       const busqueda = document.getElementById('searchInput').value.toLowerCase().trim();
-      const opcionesMes = Array.from(document.getElementById('selectMes').selectedOptions);
-      const mesesSeleccionados = opcionesMes.map(opt => opt.value);
-
+      const opcionesMes = Array.from(document.getElementById('selectMes').selectedOptions).map(o => o.value);
       const bodegaSel = document.getElementById('selectBodega').value;
       const clienteSel = document.getElementById('selectCliente').value;
       const inventarioSel = document.getElementById('selectInventario').value;
       const cediSel = document.getElementById('selectCedi').value;
       const estadoSel = document.getElementById('selectEstado').value;
-      const ordenSel = document.getElementById('selectOrdenar').value;
 
       datosFiltrados = datosPendientes.filter(row => {
-        const cedula = obtenerValorColumna(row, ['Cedula Paciente', 'Cedula']);
-        const nombre = obtenerValorColumna(row, ['Nombre Paciente', 'Nombre']);
-        const doc = obtenerValorColumna(row, ['Documento']);
-        const codArt = obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo']);
-
-        const coincideBusqueda = !busqueda || 
-          (cedula && cedula.toString().toLowerCase().includes(busqueda)) ||
-          (nombre && nombre.toString().toLowerCase().includes(busqueda)) ||
-          (doc && doc.toString().toLowerCase().includes(busqueda)) ||
-          (codArt && codArt.toString().toLowerCase().includes(busqueda));
-
-        const mesRow = obtenerValorColumna(row, ['Mes_Dispensacion', 'Mes Dispensacion', 'Mes Dispensación']);
-        const bodRow = obtenerValorColumna(row, ['Bodega Encabezado', 'Bodega']);
-        const cliRow = obtenerValorColumna(row, ['Razon Social Cliente', 'Cliente']);
-
-        const coincideMes = mesesSeleccionados.length === 0 || mesesSeleccionados.includes(mesRow);
-        const coincideBodega = !bodegaSel || bodRow === bodegaSel;
-        const coincideCliente = !clienteSel || cliRow === clienteSel;
-
-        const stockActual = parseFloat(row['Inventario Disponible en el punto de origen'] || '0');
-        let coincideInventario = true;
-        if (inventarioSel === 'con_stock') {
-          coincideInventario = stockActual > 0;
-        } else if (inventarioSel === 'sin_stock') {
-          coincideInventario = stockActual === 0;
+        if (busqueda) {
+          const c = obtenerValorColumna(row, ['Cedula Paciente', 'Cedula']);
+          const n = obtenerValorColumna(row, ['Nombre Paciente', 'Nombre']);
+          const d = obtenerValorColumna(row, ['Documento']);
+          const a = obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo']);
+          if (!c.toLowerCase().includes(busqueda) && !n.toLowerCase().includes(busqueda) && 
+              !d.toLowerCase().includes(busqueda) && !a.toLowerCase().includes(busqueda)) return false;
         }
 
-        const stockCedi = parseFloat(row['Inventario BODEGA PRINCIPAL CEDI'] || '0');
-        let coincideCedi = true;
-        if (cediSel === 'con_stock') {
-          coincideCedi = stockCedi > 0;
-        } else if (cediSel === 'sin_stock') {
-          coincideCedi = stockCedi === 0;
-        }
+        if (opcionesMes.length && !opcionesMes.includes(obtenerValorColumna(row, ['Mes_Dispensacion', 'Mes Dispensacion', 'Mes Dispensación']))) return false;
+        if (bodegaSel && obtenerValorColumna(row, ['Bodega Encabezado', 'Bodega']) !== bodegaSel) return false;
+        if (clienteSel && obtenerValorColumna(row, ['Razon Social Cliente', 'Cliente']) !== clienteSel) return false;
 
-        let coincideEstado = true;
-        const estFinal = row['Estado Final Mennar'] || 'Pendiente';
+        const st = parseFloat(row['Inventario Disponible en el punto de origen'] || 0);
+        if (inventarioSel === 'con_stock' && st <= 0) return false;
+        if (inventarioSel === 'sin_stock' && st > 0) return false;
 
-        if (estadoSel) {
-          coincideEstado = estFinal.toLowerCase() === estadoSel.toLowerCase();
-        }
+        const stCedi = parseFloat(row['Inventario BODEGA PRINCIPAL CEDI'] || 0);
+        if (cediSel === 'con_stock' && stCedi <= 0) return false;
+        if (cediSel === 'sin_stock' && stCedi > 0) return false;
 
-        return coincideBusqueda && coincideMes && coincideBodega && coincideCliente && coincideInventario && coincideCedi && coincideEstado;
-      });
+        const est = row['Estado Final Mennar'] || 'Pendiente';
+        if (estadoSel && est.toLowerCase() !== estadoSel.toLowerCase()) return false;
 
-      datosFiltrados.sort((a, b) => {
-        if (ordenSel === 'fecha_asc' || ordenSel === 'fecha_desc') {
-          const fechaA = convertirFechaParaOrdenar(obtenerValorColumna(a, ['Fecha Origen Dispensacion', 'Fecha Origen']));
-          const fechaB = convertirFechaParaOrdenar(obtenerValorColumna(b, ['Fecha Origen Dispensacion', 'Fecha Origen']));
-          return ordenSel === 'fecha_asc' ? fechaA - fechaB : fechaB - fechaA;
-        } 
-        else if (ordenSel === 'codigo_asc' || ordenSel === 'codigo_desc') {
-          const codA = (obtenerValorColumna(a, ['Codigo Articulo', 'Código Artículo']) || '').toString();
-          const codB = (obtenerValorColumna(b, ['Codigo Articulo', 'Código Artículo']) || '').toString();
-          return ordenSel === 'codigo_asc' ? codA.localeCompare(codB) : codB.localeCompare(codA);
-        } 
-        else if (ordenSel === 'mes_asc') {
-          const mesA = (obtenerValorColumna(a, ['Mes_Dispensacion', 'Mes Dispensacion', 'Mes Dispensación']) || '').toLowerCase().trim();
-          const mesB = (obtenerValorColumna(b, ['Mes_Dispensacion', 'Mes Dispensacion', 'Mes Dispensación']) || '').toLowerCase().trim();
-          const valA = ORDEN_MESES[mesA] || 99;
-          const valB = ORDEN_MESES[mesB] || 99;
-          return valA - valB;
-        }
-        return 0;
+        return true;
       });
 
       paginaActual = 1;
@@ -784,36 +579,26 @@
 
     function renderizarTabla() {
       const tbody = document.querySelector('#tablaPendientes tbody');
-      const infoContador = document.getElementById('infoContador');
-      const infoPagina = document.getElementById('infoPagina');
       tbody.innerHTML = '';
 
       const totalPaginas = Math.ceil(datosFiltrados.length / registrosPorPagina) || 1;
-      infoContador.textContent = `Mostrando: ${datosFiltrados.length} de ${datosPendientes.length} registros`;
-      infoPagina.textContent = `Página ${paginaActual} de ${totalPaginas}`;
+      document.getElementById('infoContador').textContent = `Mostrando: ${datosFiltrados.length} de ${datosPendientes.length} registros`;
+      document.getElementById('infoPagina').textContent = `Página ${paginaActual} de ${totalPaginas}`;
 
       const inicio = (paginaActual - 1) * registrosPorPagina;
-      const fin = inicio + registrosPorPagina;
-      const fragmento = document.createDocumentFragment();
+      const paginaDatos = datosFiltrados.slice(inicio, inicio + registrosPorPagina);
+      const frag = document.createDocumentFragment();
 
-      const paginaDatos = datosFiltrados.slice(inicio, fin);
-
-      paginaDatos.forEach((row) => {
+      paginaDatos.forEach(row => {
         const indexOriginal = datosPendientes.indexOf(row);
-        const diffReal = obtenerValorColumna(row, ['Diferencia Real', 'Cant. Pendiente']);
-        const cantidadPendiente = parseInt(diffReal) || 0;
+        const cantidadPendiente = parseInt(obtenerValorColumna(row, ['Diferencia Real', 'Cant. Pendiente'])) || 0;
         const estadoFinal = row['Estado Final Mennar'] || 'Pendiente';
 
         let badgeClass = 'badge-pending';
         if (estadoFinal === 'Subsanado') badgeClass = 'badge-done';
         else if (estadoFinal === 'Pendiente Parcial') badgeClass = 'badge-partial';
 
-        let fechaOrigen = obtenerValorColumna(row, ['Fecha Origen Dispensacion', 'Fecha Origen']);
-        if (fechaOrigen.includes(' ')) fechaOrigen = fechaOrigen.split(' ')[0];
-        if (fechaOrigen.includes(',')) fechaOrigen = fechaOrigen.split(',')[0];
-
-        const inventarioDisp = row['Inventario Disponible en el punto de origen'] !== undefined ? row['Inventario Disponible en el punto de origen'] : 0;
-        const inventarioCedi = row['Inventario BODEGA PRINCIPAL CEDI'] !== undefined ? row['Inventario BODEGA PRINCIPAL CEDI'] : 0;
+        let fechaOrigen = (obtenerValorColumna(row, ['Fecha Origen Dispensacion', 'Fecha Origen']) || '').split(' ')[0];
 
         const tr = document.createElement('tr');
         tr.innerHTML = `
@@ -828,160 +613,122 @@
           <td>${obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo'])}</td>
           <td>${obtenerValorColumna(row, ['Codigo Contrato'])}</td>
           <td><strong>${cantidadPendiente}</strong></td>
-          <td><strong>${inventarioDisp}</strong></td>
-          <td><strong>${inventarioCedi}</strong></td>
-          <td>
-            <span class="badge ${badgeClass}">
-              ${estadoFinal}
-            </span>
-          </td>
-          <td>
-            <button class="btn-subsanar" onclick="subsanar(${indexOriginal})">
-              ${estadoFinal === 'Pendiente' ? 'Subsanar' : 'Ajustar'}
-            </button>
-          </td>
+          <td><strong>${row['Inventario Disponible en el punto de origen'] || 0}</strong></td>
+          <td><strong>${row['Inventario BODEGA PRINCIPAL CEDI'] || 0}</strong></td>
+          <td><span class="badge ${badgeClass}">${estadoFinal}</span></td>
+          <td><button class="btn-subsanar" onclick="subsanar(${indexOriginal})">${estadoFinal === 'Pendiente' ? 'Subsanar' : 'Ajustar'}</button></td>
         `;
-        fragmento.appendChild(tr);
+        frag.appendChild(tr);
       });
 
-      tbody.appendChild(fragmento);
+      tbody.appendChild(frag);
     }
 
-    function cambiarPagina(direccion) {
-      const totalPaginas = Math.ceil(datosFiltrados.length / registrosPorPagina) || 1;
-      paginaActual += direccion;
-
-      if (paginaActual < 1) paginaActual = 1;
-      if (paginaActual > totalPaginas) paginaActual = totalPaginas;
-
+    function cambiarPagina(dir) {
+      const total = Math.ceil(datosFiltrados.length / registrosPorPagina) || 1;
+      paginaActual = Math.max(1, Math.min(total, paginaActual + dir));
       renderizarTabla();
+    }
+
+    function poblarSelectoresFiltro() {
+      const sMes = document.getElementById('selectMes');
+      const sBod = document.getElementById('selectBodega');
+      const sCli = document.getElementById('selectCliente');
+
+      const meses = [...new Set(datosPendientes.map(i => obtenerValorColumna(i, ['Mes_Dispensacion', 'Mes Dispensacion', 'Mes Dispensación'])).filter(Boolean))].sort();
+      const bodegas = [...new Set(datosPendientes.map(i => obtenerValorColumna(i, ['Bodega Encabezado', 'Bodega'])).filter(Boolean))].sort();
+      const clientes = [...new Set(datosPendientes.map(i => obtenerValorColumna(i, ['Razon Social Cliente', 'Cliente'])).filter(Boolean))].sort();
+
+      sMes.innerHTML = meses.map(m => `<option value="${m}">${m}</option>`).join('');
+      sBod.innerHTML = '<option value="">-- Todas las Bodegas --</option>' + bodegas.map(b => `<option value="${b}">${b}</option>`).join('');
+      sCli.innerHTML = '<option value="">-- Todos los Clientes --</option>' + clientes.map(c => `<option value="${c}">${c}</option>`).join('');
     }
 
     function subsanar(index) {
       const item = datosPendientes[index];
-      const diffReal = obtenerValorColumna(item, ['Diferencia Real', 'Cant. Pendiente']);
-      const pendienteActual = parseInt(diffReal) || 0;
+      const pendienteActual = parseInt(obtenerValorColumna(item, ['Diferencia Real', 'Cant. Pendiente'])) || 0;
       const cantOriginal = item['_CantOriginal'] || pendienteActual;
       const descripcion = obtenerValorColumna(item, ['Descripcion', 'Descripción']);
 
-      const doc = obtenerValorColumna(item, ['Documento']);
-      const bodega = obtenerValorColumna(item, ['Bodega Encabezado', 'Bodega']);
-      const cliente = obtenerValorColumna(item, ['Razon Social Cliente', 'Cliente']);
-      const cedula = obtenerValorColumna(item, ['Cedula Paciente', 'Cedula']);
-      const paciente = obtenerValorColumna(item, ['Nombre Paciente', 'Nombre']);
-      const codArt = obtenerValorColumna(item, ['Codigo Articulo', 'Código Artículo']);
-      const codContrato = obtenerValorColumna(item, ['Codigo Contrato']);
-      
-      const entrada = prompt(
-        `Registrar entrega para:\n${descripcion}\n\n` +
-        `• Cantidad Pendiente Inicial: ${cantOriginal}\n` +
-        `• Cantidad Pendiente Actual: ${pendienteActual}\n\n` +
-        `REGLAS DE INGRESO:\n` +
-        ` 1. Ingrese NÚMERO NEGATIVO (ej: -2) ➡️ REVIERTE a Pendiente Activo\n` +
-        ` 2. Ingrese CANTIDAD PARCIAL (menor a ${cantOriginal}) ➡️ Pasa a Pendiente Parcial\n` +
-        ` 3. Ingrese CANTIDAD TOTAL (${cantOriginal}) ➡️ Pasa a Subsanado`
-      );
+      const entrada = prompt(`Registrar entrega para:\n${descripcion}\n\nPendiente Inicial: ${cantOriginal} | Pendiente Actual: ${pendienteActual}\n\nIngrese Cantidad Entregada (o número negativo para revertir):`);
 
       if (entrada !== null && entrada.trim() !== '' && !isNaN(entrada)) {
         const cantidadIngresada = parseInt(entrada);
-        const idUnico = normalizarClaveSuperEstricta(doc + '_' + codArt);
+        const doc = obtenerValorColumna(item, ['Documento']);
+        const codArt = obtenerValorColumna(item, ['Codigo Articulo', 'Código Artículo']);
+        const idUnico = norm(doc + '_' + codArt);
 
         let cambiosExistentes = {};
-        try {
-          cambiosExistentes = JSON.parse(localStorage.getItem(CHANGES_KEY)) || {};
-        } catch(e) {}
+        try { cambiosExistentes = JSON.parse(localStorage.getItem(CHANGES_KEY)) || {}; } catch(e){}
 
         if (cantidadIngresada < 0) {
           item['Diferencia Real'] = cantOriginal;
           item['Estado Final Mennar'] = 'Pendiente';
-          delete item['Fecha y hora cuando se entrega del Pendiente'];
-
           delete cambiosExistentes[idUnico];
           localStorage.setItem(CHANGES_KEY, JSON.stringify(cambiosExistentes));
-
-          enviarCambioANube({ idUnico: idUnico, accion: 'borrar' });
+          enviarCambioANubeAsync({ idUnico, accion: 'borrar' });
           aplicarFiltros();
           return;
         }
 
-        const saldoRestante = Math.max(0, cantOriginal - cantidadIngresada);
-        item['Diferencia Real'] = saldoRestante;
+        const saldo = Math.max(0, cantOriginal - cantidadIngresada);
+        item['Diferencia Real'] = saldo;
+        let estadoFinal = saldo === 0 ? 'Subsanado' : (cantidadIngresada > 0 ? 'Pendiente Parcial' : 'Pendiente');
+        const fechaEntrega = new Date().toISOString().replace('T', ' ').substring(0, 19);
 
-        let estadoFinal = 'Pendiente';
-        if (cantidadIngresada >= cantOriginal || saldoRestante === 0) {
-          estadoFinal = 'Subsanado';
-        } else if (cantidadIngresada > 0 && saldoRestante < cantOriginal) {
-          estadoFinal = 'Pendiente Parcial';
-        }
-
-        const ahora = new Date();
-        const fechaEntrega = ahora.toISOString().replace('T', ' ').substring(0, 19);
         item['Fecha y hora cuando se entrega del Pendiente'] = fechaEntrega;
         item['Estado Final Mennar'] = estadoFinal;
 
-        cambiosExistentes[idUnico] = {
-          doc: doc,
-          bodega: bodega,
-          cliente: cliente,
-          cedula: cedula,
-          paciente: paciente,
-          medicamento: descripcion,
-          codArt: codArt,
-          codContrato: codContrato,
+        const payload = {
+          idUnico, doc,
+          bodega: obtenerValorColumna(item, ['Bodega Encabezado', 'Bodega']),
+          cliente: obtenerValorColumna(item, ['Razon Social Cliente', 'Cliente']),
+          cedula: obtenerValorColumna(item, ['Cedula Paciente', 'Cedula']),
+          paciente: obtenerValorColumna(item, ['Nombre Paciente', 'Nombre']),
+          medicamento: descripcion, codArt,
+          codContrato: obtenerValorColumna(item, ['Codigo Contrato']),
           cantEntregada: cantidadIngresada,
-          est: estadoFinal,
-          fecha: fechaEntrega
+          est: estadoFinal, fecha: fechaEntrega, accion: 'guardar'
         };
 
+        cambiosExistentes[idUnico] = payload;
         localStorage.setItem(CHANGES_KEY, JSON.stringify(cambiosExistentes));
-
-        enviarCambioANube({
-          idUnico: idUnico,
-          doc: doc,
-          bodega: bodega,
-          cliente: cliente,
-          cedula: cedula,
-          paciente: paciente,
-          medicamento: descripcion,
-          codArt: codArt,
-          codContrato: codContrato,
-          cantEntregada: cantidadIngresada,
-          est: estadoFinal,
-          fecha: fechaEntrega,
-          accion: 'guardar'
-        });
-
+        enviarCambioANubeAsync(payload);
         aplicarFiltros();
       }
     }
 
-    function exportarCSV(soloFiltrados = false) {
-      const dataset = soloFiltrados ? datosFiltrados : datosPendientes;
+    function enviarCambioANubeAsync(payload) {
+      if (!WEB_APP_URL) return;
+      fetch(WEB_APP_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }).catch(e => console.error('Error al guardar en nube:', e));
+    }
 
-      if (dataset.length === 0) {
-        alert('No hay registros disponibles para exportar.');
-        return;
-      }
+    function exportarCSV(soloFiltrados) {
+      const dataset = soloFiltrados ? datosFiltrados : datosPendientes;
+      if (!dataset.length) return alert('No hay datos para exportar.');
 
       let csvText = cabeceras.join(';') + '\n';
       dataset.forEach(row => {
-        const filaStr = cabeceras.map(h => `"${(row[h] || '').toString().replace(/"/g, '""')}"`).join(';');
-        csvText += filaStr + '\n';
+        csvText += cabeceras.map(h => `"${(row[h] || '').toString().replace(/"/g, '""')}"`).join(';') + '\n';
       });
 
       const blob = new Blob(['\uFEFF' + csvText], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      
-      const nombreArchivo = soloFiltrados 
-        ? `Pendientes_Filtrados_${new Date().toISOString().slice(0,10)}.csv`
-        : `Pendientes_Completo_${new Date().toISOString().slice(0,10)}.csv`;
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `Pendientes_Export_${Date.now()}.csv`;
+      a.click();
+    }
 
-      const link = document.createElement('a');
-      link.setAttribute('href', url);
-      link.setAttribute('download', nombreArchivo);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+    function limpiarDatos() {
+      if (confirm('¿Restablecer datos locales?')) {
+        localStorage.clear();
+        location.reload();
+      }
     }
   </script>
 </body>
