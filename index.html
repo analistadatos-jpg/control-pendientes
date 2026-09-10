@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>APP CONTROL SUBSANACION DE PENDIENTES MENNAR</title>
-  <!-- Engine SheetJS para lectura ultra-rápida de archivos Excel y CSV -->
+  <!-- Engine SheetJS para lectura de binarios Excel -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <style>
     :root {
@@ -185,10 +185,8 @@
         <select id="selectMes" multiple size="3" onchange="aplicarFiltros()"></select>
       </div>
       <div>
-        <label for="selectBodega">Bodega / Punto:</label>
-        <select id="selectBodega" onchange="aplicarFiltros()">
-          <option value="">-- Todas las Bodegas --</option>
-        </select>
+        <label for="selectBodega">Bodega / Punto (Ctrl + clic):</label>
+        <select id="selectBodega" multiple size="3" onchange="aplicarFiltros()"></select>
       </div>
       <div>
         <label for="selectCliente">Cliente / EPS:</label>
@@ -284,7 +282,7 @@
       'julio': 7, 'agosto': 8, 'septiembre': 9, 'octubre': 10, 'noviembre': 11, 'diciembre': 12
     };
 
-    // Fast Cache Normalization Engine
+    // Cache de normalización rápida
     const normCache = Object.create(null);
     function norm(val) {
       if (!val) return '';
@@ -450,7 +448,6 @@
         mEstandar.set(key, (mEstandar.get(key) || 0) + stock);
       }
 
-      // Indexación Ultra-Rápida
       for (let i = 0; i < datosPendientes.length; i++) {
         const row = datosPendientes[i];
         const bodNorm = norm(obtenerValorColumna(row, ['Bodega Encabezado', 'Bodega']));
@@ -565,8 +562,10 @@
 
     function aplicarFiltros() {
       const busqueda = document.getElementById('searchInput').value.toLowerCase().trim();
+      
       const opcionesMes = Array.from(document.getElementById('selectMes').selectedOptions).map(o => o.value);
-      const bodegaSel = document.getElementById('selectBodega').value;
+      const opcionesBodega = Array.from(document.getElementById('selectBodega').selectedOptions).map(o => o.value);
+
       const clienteSel = document.getElementById('selectCliente').value;
       const inventarioSel = document.getElementById('selectInventario').value;
       const cediSel = document.getElementById('selectCedi').value;
@@ -584,7 +583,10 @@
         }
 
         if (opcionesMes.length && !opcionesMes.includes(obtenerValorColumna(row, ['Mes_Dispensacion', 'Mes Dispensacion', 'Mes Dispensación']))) return false;
-        if (bodegaSel && obtenerValorColumna(row, ['Bodega Encabezado', 'Bodega']) !== bodegaSel) return false;
+        
+        // Filtro de Selección Múltiple para Bodega
+        if (opcionesBodega.length && !opcionesBodega.includes(obtenerValorColumna(row, ['Bodega Encabezado', 'Bodega']))) return false;
+
         if (clienteSel && obtenerValorColumna(row, ['Razon Social Cliente', 'Cliente']) !== clienteSel) return false;
 
         const st = parseFloat(row['Inventario Disponible en el punto de origen'] || 0);
@@ -604,7 +606,6 @@
         return true;
       });
 
-      // Ordenamiento Optimizado
       datosFiltrados.sort((a, b) => {
         if (ordenSel === 'fecha_asc' || ordenSel === 'fecha_desc') {
           const fechaA = convertirFechaParaOrdenar(obtenerValorColumna(a, ['Fecha Origen Dispensacion', 'Fecha Origen']));
@@ -691,7 +692,7 @@
       const clientes = [...new Set(datosPendientes.map(i => obtenerValorColumna(i, ['Razon Social Cliente', 'Cliente'])).filter(Boolean))].sort();
 
       sMes.innerHTML = meses.map(m => `<option value="${m}">${m}</option>`).join('');
-      sBod.innerHTML = '<option value="">-- Todas las Bodegas --</option>' + bodegas.map(b => `<option value="${b}">${b}</option>`).join('');
+      sBod.innerHTML = bodegas.map(b => `<option value="${b}">${b}</option>`).join('');
       sCli.innerHTML = '<option value="">-- Todos los Clientes --</option>' + clientes.map(c => `<option value="${c}">${c}</option>`).join('');
     }
 
