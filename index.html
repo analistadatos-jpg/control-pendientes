@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Control y Subsanación de Pendientes Activos - High Performance</title>
-  <!-- SheetJS CDN para lectura binaria ultra rápida -->
+  <title>Control y Subsanación de Pendientes Activos</title>
+  <!-- Engine SheetJS para lectura de binarios Excel sin congelar la interfaz -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <style>
     :root {
@@ -71,9 +71,7 @@
       padding: 2px;
     }
 
-    button { font-weight: 600; cursor: pointer; border: none; transition: opacity 0.15s; }
-    button:active { opacity: 0.8; }
-    
+    button { font-weight: 600; cursor: pointer; border: none; }
     .btn-primary { background-color: var(--primary); color: white; }
     .btn-info { background-color: #0b5ed7; color: white; }
     .btn-success { background-color: var(--success); color: white; }
@@ -97,7 +95,6 @@
       overflow-x: auto; 
       max-height: 550px; 
       overflow-y: auto; 
-      will-change: transform;
     }
     
     table { 
@@ -138,7 +135,7 @@
 </head>
 <body>
 
-  <h1>Control y Subsanación de Pendientes Activos ⚡ (Engine V8 Ultra-Fast)</h1>
+  <h1>Control y Subsanación de Pendientes Activos (Modo Ultra Rápido ⚡)</h1>
 
   <div class="card">
     <div class="grid-files">
@@ -231,7 +228,7 @@
         <h3 style="margin: 0; font-size: 13px;">Registros</h3>
         <button class="btn-filter-export" onclick="exportarCSV(true)">📥 Descargar Filtro Actual (CSV/Excel)</button>
       </div>
-      <div class="stats" id="infoContador">Listo para procesar.</div>
+      <div class="stats" id="infoContador">Inicializando sistema...</div>
     </div>
     
     <div class="table-container">
@@ -269,7 +266,7 @@
   <script>
     const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxHzhqkIySVU1v-QFZnJjPoXVW83pg40X7orwR5d96qs3DWyEBfe3Wl9mwAsnE9AMIr/exec';
     const CHANGES_KEY = 'app_pendientes_subsanaciones';
-    
+
     let datosPendientes = [];
     let datosFiltrados = [];
     let cabeceras = [];
@@ -285,7 +282,7 @@
       'julio': 7, 'agosto': 8, 'septiembre': 9, 'octubre': 10, 'noviembre': 11, 'diciembre': 12
     };
 
-    // Cache Hash O(1) de normalización
+    // Cache de normalización rápida
     const normCache = Object.create(null);
     function norm(val) {
       if (!val) return '';
@@ -300,28 +297,28 @@
     });
 
     async function cargarArchivosAutomaticos() {
-      document.getElementById('infoContador').textContent = '⚡ Carga ultra-rápida en ejecución...';
+      document.getElementById('infoContador').textContent = 'Cargando datos automáticos...';
       try {
         const timestamp = '?v=' + Date.now();
         const respPend = await fetch('./' + encodeURIComponent(ARCHIVO_PENDIENTES) + timestamp);
         if (respPend.ok) {
           const textoPend = await respPend.text();
-          parsearCSVMatriz(textoPend);
+          parsearMatrizDirecta(convertirTextoAMatriz(textoPend));
         }
 
         try {
           const respInv = await fetch('./' + encodeURIComponent(ARCHIVO_INVENTARIO) + timestamp);
           if (respInv.ok) {
             const textoInv = await respInv.text();
-            procesarInventarioUltraFast(textoInv);
+            procesarMatrizInventarioFast(convertirTextoAMatriz(textoInv));
           }
-        } catch (e) { console.warn('Inventario local no encontrado.'); }
+        } catch (e) { console.warn('Inventario local por defecto no encontrado.'); }
 
         sincronizarDesdeNubeSilencioso();
         poblarSelectoresFiltro();
         aplicarFiltros();
       } catch (err) {
-        document.getElementById('infoContador').textContent = 'Seleccione un archivo manual para comenzar.';
+        document.getElementById('infoContador').textContent = 'Listo. Cargue sus archivos manualmente.';
       }
     }
 
@@ -329,7 +326,7 @@
       if (!WEB_APP_URL) return reaplicarSubsanacionesLocal();
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2500); // Max timeout 2.5s para no demorar la App
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
 
       fetch(WEB_APP_URL, { signal: controller.signal })
         .then(res => res.json())
@@ -371,35 +368,38 @@
       } catch (e) {}
     }
 
-    function parsearCSVMatriz(texto) {
+    function convertirTextoAMatriz(texto) {
       const lineas = texto.split(/\r?\n/);
-      if (!lineas.length) return;
-
+      if (!lineas.length) return [];
       let sep = texto.includes(';') ? ';' : ',';
-      let headerIdx = 0;
+      return lineas.map(linea => linea.split(sep).map(v => v.trim().replace(/^"|"$/g, '')));
+    }
 
-      for (let i = 0; i < Math.min(10, lineas.length); i++) {
-        const l = norm(lineas[i]);
-        if (l.includes('bodega') && l.includes('codigo')) {
+    function parsearMatrizDirecta(matriz) {
+      if (!matriz || matriz.length === 0) return;
+
+      let headerIdx = 0;
+      for (let i = 0; i < Math.min(10, matriz.length); i++) {
+        const lineStr = norm(matriz[i].join(''));
+        if (lineStr.includes('bodega') && lineStr.includes('codigo')) {
           headerIdx = i;
           break;
         }
       }
 
-      cabeceras = lineas[headerIdx].split(sep).map(c => c.trim().replace(/^"|"$/g, ''));
+      cabeceras = matriz[headerIdx];
       if (!cabeceras.includes('Inventario Disponible en el punto de origen')) cabeceras.push('Inventario Disponible en el punto de origen');
       if (!cabeceras.includes('Inventario BODEGA PRINCIPAL CEDI')) cabeceras.push('Inventario BODEGA PRINCIPAL CEDI');
 
       datosPendientes = [];
       const numCols = cabeceras.length;
 
-      for (let i = headerIdx + 1; i < lineas.length; i++) {
-        const line = lineas[i];
-        if (!line) continue;
-        const vals = line.split(sep);
+      for (let i = headerIdx + 1; i < matriz.length; i++) {
+        const rowArr = matriz[i];
+        if (!rowArr || rowArr.length <= 1) continue;
         const fila = {};
         for (let j = 0; j < numCols; j++) {
-          fila[cabeceras[j]] = vals[j] ? vals[j].trim().replace(/^"|"$/g, '') : '';
+          fila[cabeceras[j]] = rowArr[j] !== undefined ? rowArr[j] : '';
         }
 
         const diffOrig = obtenerValorColumna(fila, ['Diferencia Real', 'Cant. Pendiente', 'Cantidad Pendiente']);
@@ -411,34 +411,34 @@
       }
     }
 
-    function procesarInventarioUltraFast(texto) {
-      const lineas = texto.split(/\r?\n/);
-      if (!lineas.length) return;
+    function procesarMatrizInventarioFast(matriz) {
+      if (!matriz || matriz.length === 0) return;
 
-      let sep = texto.includes(';') ? ';' : ',';
       const mEstandar = new Map();
       const mNEPS = new Map();
       const mCEDI = new Map();
-
       const nepsPermitidos = ['dispmennar2', 'dispmennar5', 'dispmennar4', 'bodegapendientesneps'];
 
       let colCod = 1, colUni = 8, colBod = 13;
-      const headers = lineas[0].split(sep).map(c => norm(c));
       
-      headers.forEach((h, idx) => {
-        if (h.includes('codigo')) colCod = idx;
-        if (h.includes('unidades') || h.includes('stock') || h.includes('cantidad')) colUni = idx;
-        if (h.includes('bodega')) colBod = idx;
-      });
+      for (let i = 0; i < Math.min(5, matriz.length); i++) {
+        const cols = matriz[i].map(c => norm(c));
+        const cC = cols.findIndex(c => c.includes('codigo'));
+        const cU = cols.findIndex(c => c.includes('unidades') || c.includes('stock') || c.includes('cantidad'));
+        const cB = cols.findIndex(c => c.includes('bodega'));
+        if (cC !== -1 && cU !== -1 && cB !== -1) {
+          colCod = cC; colUni = cU; colBod = cB;
+          break;
+        }
+      }
 
-      for (let i = 1; i < lineas.length; i++) {
-        const line = lineas[i];
-        if (!line) continue;
-        const cols = line.split(sep);
+      for (let i = 1; i < matriz.length; i++) {
+        const cols = matriz[i];
+        if (!cols || cols.length <= 1) continue;
 
         const codNorm = norm(cols[colCod]);
         const bodNorm = norm(cols[colBod]);
-        let stock = parseFloat((cols[colUni] || '0').replace(',', '.')) || 0;
+        let stock = parseFloat((cols[colUni] || '0').toString().replace(',', '.')) || 0;
         if (stock < 0) stock = 0;
 
         if (bodNorm.includes('cedi')) mCEDI.set(codNorm, (mCEDI.get(codNorm) || 0) + stock);
@@ -448,15 +448,15 @@
         mEstandar.set(key, (mEstandar.get(key) || 0) + stock);
       }
 
-      // Asignación directa O(N)
+      // Cruce ultrarrápido indexado en memoria O(N)
       for (let i = 0; i < datosPendientes.length; i++) {
         const row = datosPendientes[i];
         const bodNorm = norm(obtenerValorColumna(row, ['Bodega Encabezado', 'Bodega']));
         const codNorm = norm(obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo']));
         const tipoNorm = norm(obtenerValorColumna(row, ['Tipo Comprobante']));
 
-        let stockOrigen = nepsPermitidos.includes(tipoNorm) && mNEPS.has(codNorm) 
-          ? mNEPS.get(codNorm) 
+        let stockOrigen = nepsPermitidos.includes(tipoNorm) && mNEPS.has(codNorm)
+          ? mNEPS.get(codNorm)
           : (mEstandar.get(bodNorm + '_' + codNorm) || 0);
 
         row['Inventario Disponible en el punto de origen'] = stockOrigen;
@@ -487,8 +487,8 @@
       if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
         reader.onload = e => {
           const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array', dense: true });
-          const csv = XLSX.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]], { FS: ';' });
-          parsearCSVMatriz(csv);
+          const matriz = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '' });
+          parsearMatrizDirecta(matriz);
           sincronizarDesdeNubeSilencioso();
           poblarSelectoresFiltro();
           aplicarFiltros();
@@ -496,7 +496,7 @@
         reader.readAsArrayBuffer(file);
       } else {
         reader.onload = e => {
-          parsearCSVMatriz(e.target.result);
+          parsearMatrizDirecta(convertirTextoAMatriz(e.target.result));
           sincronizarDesdeNubeSilencioso();
           poblarSelectoresFiltro();
           aplicarFiltros();
@@ -508,7 +508,7 @@
     function cargarInventarioManualmente() {
       const input = document.getElementById('csvInvInput');
       const file = input.files[0];
-      if (!file) return alert('Selecciona un archivo de inventario.');
+      if (!file) return alert('Por favor selecciona un archivo de inventario.');
       if (!datosPendientes.length) return alert('Carga primero el archivo de Pendientes.');
 
       document.getElementById('infoContador').textContent = 'Cruzando Inventario en milisegundos...';
@@ -517,15 +517,17 @@
       if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
         reader.onload = e => {
           const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array', dense: true });
-          const csv = XLSX.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]], { FS: ';' });
-          procesarInventarioUltraFast(csv);
+          const matriz = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '' });
+          procesarMatrizInventarioFast(matriz);
           aplicarFiltros();
+          alert('Stock cargado y cruzado exitosamente.');
         };
         reader.readAsArrayBuffer(file);
       } else {
         reader.onload = e => {
-          procesarInventarioUltraFast(e.target.result);
+          procesarMatrizInventarioFast(convertirTextoAMatriz(e.target.result));
           aplicarFiltros();
+          alert('Stock cargado y cruzado exitosamente.');
         };
         reader.readAsText(file, 'ISO-8859-1');
       }
@@ -705,7 +707,7 @@
         mode: 'no-cors',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
-      }).catch(e => console.error('Error al guardar en nube:', e));
+      }).catch(e => console.error('Error enviando a la nube:', e));
     }
 
     function exportarCSV(soloFiltrados) {
@@ -725,7 +727,7 @@
     }
 
     function limpiarDatos() {
-      if (confirm('¿Restablecer datos locales?')) {
+      if (confirm('¿Restablecer datos locales y memoria de trabajo?')) {
         localStorage.clear();
         location.reload();
       }
