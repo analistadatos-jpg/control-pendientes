@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>APP CONTROL SUBSANACION DE PENDIENTES MENNAR</title>
-  <!-- Engine SheetJS para lectura de binarios Excel -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <style>
     :root {
@@ -248,6 +247,7 @@
             <th>Cant. Pend.</th>
             <th>Inv. Origen</th>
             <th>Inv. CEDI</th>
+            <th>Fecha Subsanación</th>
             <th>Entrega Efectiva</th>
             <th>Estado</th>
             <th>Acción</th>
@@ -356,7 +356,8 @@
 
           row['Diferencia Real'] = Math.max(0, cantOrig - cantEntregada);
           row['Estado Final Mennar'] = ajuste.est;
-          row['Entrega Efectiva'] = ajuste.fechaEntregaEfectiva || ajuste.fecha || '';
+          row['Fecha Subsanación'] = ajuste.fechaSubsanacion || ajuste.fecha || '';
+          row['Entrega Efectiva'] = ajuste.fechaEntregaEfectiva || '';
         }
       }
     }
@@ -390,6 +391,7 @@
       cabeceras = matriz[headerIdx];
       if (!cabeceras.includes('Inventario Disponible en el punto de origen')) cabeceras.push('Inventario Disponible en el punto de origen');
       if (!cabeceras.includes('Inventario BODEGA PRINCIPAL CEDI')) cabeceras.push('Inventario BODEGA PRINCIPAL CEDI');
+      if (!cabeceras.includes('Fecha Subsanación')) cabeceras.push('Fecha Subsanación');
       if (!cabeceras.includes('Entrega Efectiva')) cabeceras.push('Entrega Efectiva');
 
       datosPendientes = [];
@@ -407,6 +409,7 @@
         fila['_CantOriginal'] = parseInt(diffOrig) || 0;
         fila['Inventario Disponible en el punto de origen'] = 0;
         fila['Inventario BODEGA PRINCIPAL CEDI'] = 0;
+        fila['Fecha Subsanación'] = '';
         fila['Entrega Efectiva'] = '';
 
         datosPendientes.push(fila);
@@ -651,6 +654,7 @@
         else if (estadoFinal === 'Pendiente Parcial') badgeClass = 'badge-partial';
 
         let fechaOrigen = (obtenerValorColumna(row, ['Fecha Origen Dispensacion', 'Fecha Origen']) || '').split(' ')[0];
+        let fechaSubsanacion = row['Fecha Subsanación'] || '-';
         let entregaEfectiva = row['Entrega Efectiva'] || '-';
 
         const tr = document.createElement('tr');
@@ -668,6 +672,7 @@
           <td><strong>${cantidadPendiente}</strong></td>
           <td><strong>${row['Inventario Disponible en el punto de origen'] || 0}</strong></td>
           <td><strong>${row['Inventario BODEGA PRINCIPAL CEDI'] || 0}</strong></td>
+          <td><strong>${fechaSubsanacion}</strong></td>
           <td><strong>${entregaEfectiva}</strong></td>
           <td><span class="badge ${badgeClass}">${estadoFinal}</span></td>
           <td><button class="btn-subsanar" onclick="subsanar(${indexOriginal})">${estadoFinal.includes('Pendiente') ? 'Subsanar' : 'Ajustar'}</button></td>
@@ -718,6 +723,7 @@
         if (cantidadIngresada < 0) {
           item['Diferencia Real'] = cantOriginal;
           item['Estado Final Mennar'] = 'Pendiente Activo';
+          item['Fecha Subsanación'] = '';
           item['Entrega Efectiva'] = '';
           delete cambiosExistentes[idUnico];
           localStorage.setItem(CHANGES_KEY, JSON.stringify(cambiosExistentes));
@@ -726,21 +732,23 @@
           return;
         }
 
-        // Sugiere por defecto la fecha de entrega previa si ya existía
-        const fechaSugerida = item['Entrega Efectiva'] || new Date().toISOString().split('T')[0];
+        const hoyStr = new Date().toISOString().split('T')[0];
+        const fechaSugerida = item['Entrega Efectiva'] || hoyStr;
         let fechaEfectiva = prompt(`Ingrese la fecha válida de Entrega Efectiva (AAAA-MM-DD):`, fechaSugerida);
         
         if (!fechaEfectiva || isNaN(Date.parse(fechaEfectiva))) {
-          alert('Fecha no válida o cancelada. Operación no guardada.');
+          alert('Fecha de Entrega Efectiva no válida o cancelada. Operación cancelada.');
           return;
         }
 
         const saldo = Math.max(0, cantOriginal - cantidadIngresada);
         item['Diferencia Real'] = saldo;
         let estadoFinal = saldo === 0 ? 'Subsanado' : (cantidadIngresada > 0 ? 'Pendiente Parcial' : 'Pendiente Activo');
+        
+        // Fecha y hora del sistema en que se realiza el clic de subsanación
         const fechaRegistroSys = new Date().toISOString().replace('T', ' ').substring(0, 19);
 
-        item['Fecha y hora cuando se entrega del Pendiente'] = fechaRegistroSys;
+        item['Fecha Subsanación'] = fechaRegistroSys;
         item['Estado Final Mennar'] = estadoFinal;
         item['Entrega Efectiva'] = fechaEfectiva;
 
@@ -753,8 +761,9 @@
           medicamento: descripcion, codArt,
           codContrato: obtenerValorColumna(item, ['Codigo Contrato']),
           cantEntregada: cantidadIngresada,
+          fechaSubsanacion: fechaRegistroSys,
           fechaEntregaEfectiva: fechaEfectiva,
-          est: estadoFinal, fecha: fechaRegistroSys, accion: 'guardar'
+          est: estadoFinal, accion: 'guardar'
         };
 
         cambiosExistentes[idUnico] = payload;
