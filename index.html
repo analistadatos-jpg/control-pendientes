@@ -733,20 +733,27 @@
           return;
         }
 
-        const hoyStr = new Date().toISOString().split('T')[0];
-        const fechaSugerida = item['Entrega Efectiva'] || hoyStr;
-        let fechaEfectiva = prompt(`Ingrese la fecha válida de Entrega Efectiva (AAAA-MM-DD):`, fechaSugerida);
+        // FECHA DE ENTREGA EFECTIVA: OPCIONAL (Opcional presionar Enter sin colocar nada)
+        const fechaPrev = item['Entrega Efectiva'] || '';
+        let inputFecha = prompt(`[OPCIONAL] Ingrese Fecha de Entrega Efectiva (AAAA-MM-DD).\nO pulse Aceptar/Enter para dejar en blanco:`, fechaPrev);
         
-        if (!fechaEfectiva || isNaN(Date.parse(fechaEfectiva))) {
-          alert('Fecha de Entrega Efectiva no válida o cancelada. Operación cancelada.');
-          return;
+        let fechaEfectiva = "";
+        if (inputFecha !== null && inputFecha.trim() !== "") {
+          const fechaParsed = Date.parse(inputFecha.trim());
+          if (!isNaN(fechaParsed)) {
+            fechaEfectiva = inputFecha.trim();
+          } else {
+            alert('Formato de fecha no reconocido. Se dejará la fecha de entrega en blanco.');
+          }
+        } else if (inputFecha !== null && inputFecha.trim() === "") {
+          fechaEfectiva = ""; // Permitir dejarla vacía conscientemente
         }
 
         const saldo = Math.max(0, cantOriginal - cantidadIngresada);
         item['Diferencia Real'] = saldo;
         let estadoFinal = saldo === 0 ? 'Subsanado' : (cantidadIngresada > 0 ? 'Pendiente Parcial' : 'Pendiente Activo');
         
-        // Fecha y hora del sistema en que se realiza el clic de subsanación
+        // Marca de tiempo automática de auditoría (cuando se hizo clic en el sistema)
         const fechaRegistroSys = new Date().toISOString().replace('T', ' ').substring(0, 19);
 
         item['Fecha Subsanación'] = fechaRegistroSys;
