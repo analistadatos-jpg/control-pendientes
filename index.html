@@ -315,6 +315,9 @@
           }
         } catch (e) { console.warn('Inventario secundario no detectado.'); }
 
+        // Primero re-aplicamos los cambios guardados localmente
+        reaplicarSubsanacionesLocal();
+        // Luego sincronizamos con la nube
         sincronizarDesdeNubeSilencioso();
         poblarSelectoresFiltro();
         aplicarFiltros();
@@ -327,15 +330,20 @@
       if (!WEB_APP_URL) return reaplicarSubsanacionesLocal();
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2000);
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
 
       fetch(WEB_APP_URL, { signal: controller.signal })
         .then(res => res.json())
         .then(mapaAjustes => {
           clearTimeout(timeoutId);
-          localStorage.setItem(CHANGES_KEY, JSON.stringify(mapaAjustes));
-          aplicarMapaAjustes(mapaAjustes);
-          aplicarFiltros();
+          if (mapaAjustes && typeof mapaAjustes === 'object') {
+            let localCache = {};
+            try { localCache = JSON.parse(localStorage.getItem(CHANGES_KEY)) || {}; } catch(e){}
+            const fusion = Object.assign({}, localCache, mapaAjustes);
+            localStorage.setItem(CHANGES_KEY, JSON.stringify(fusion));
+            aplicarMapaAjustes(fusion);
+            aplicarFiltros();
+          }
         })
         .catch(() => {
           clearTimeout(timeoutId);
@@ -344,6 +352,7 @@
     }
 
     function aplicarMapaAjustes(mapaAjustes) {
+      if (!mapaAjustes) return;
       for (let i = 0; i < datosPendientes.length; i++) {
         const row = datosPendientes[i];
         const doc = obtenerValorColumna(row, ['Documento']);
@@ -733,7 +742,6 @@
           return;
         }
 
-        // FECHA DE ENTREGA EFECTIVA: OPCIONAL (Opcional presionar Enter sin colocar nada)
         const fechaPrev = item['Entrega Efectiva'] || '';
         let inputFecha = prompt(`[OPCIONAL] Ingrese Fecha de Entrega Efectiva (AAAA-MM-DD).\nO pulse Aceptar/Enter para dejar en blanco:`, fechaPrev);
         
@@ -745,15 +753,12 @@
           } else {
             alert('Formato de fecha no reconocido. Se dejará la fecha de entrega en blanco.');
           }
-        } else if (inputFecha !== null && inputFecha.trim() === "") {
-          fechaEfectiva = ""; // Permitir dejarla vacía conscientemente
         }
 
         const saldo = Math.max(0, cantOriginal - cantidadIngresada);
         item['Diferencia Real'] = saldo;
         let estadoFinal = saldo === 0 ? 'Subsanado' : (cantidadIngresada > 0 ? 'Pendiente Parcial' : 'Pendiente Activo');
         
-        // Marca de tiempo automática de auditoría (cuando se hizo clic en el sistema)
         const fechaRegistroSys = new Date().toISOString().replace('T', ' ').substring(0, 19);
 
         item['Fecha Subsanación'] = fechaRegistroSys;
@@ -776,6 +781,7 @@
 
         cambiosExistentes[idUnico] = payload;
         localStorage.setItem(CHANGES_KEY, JSON.stringify(cambiosExistentes));
+        
         enviarCambioANubeAsync(payload);
         aplicarFiltros();
       }
