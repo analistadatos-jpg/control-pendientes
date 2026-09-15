@@ -248,6 +248,7 @@
             <th>Cant. Pend.</th>
             <th>Inv. Origen</th>
             <th>Inv. CEDI</th>
+            <th>Entrega Efectiva</th>
             <th>Estado</th>
             <th>Acción</th>
           </tr>
@@ -282,7 +283,6 @@
       'julio': 7, 'agosto': 8, 'septiembre': 9, 'octubre': 10, 'noviembre': 11, 'diciembre': 12
     };
 
-    // Cache de normalización rápida
     const normCache = Object.create(null);
     function norm(val) {
       if (!val) return '';
@@ -356,7 +356,7 @@
 
           row['Diferencia Real'] = Math.max(0, cantOrig - cantEntregada);
           row['Estado Final Mennar'] = ajuste.est;
-          row['Fecha y hora cuando se entrega del Pendiente'] = ajuste.fecha;
+          row['Entrega Efectiva'] = ajuste.fechaEntregaEfectiva || ajuste.fecha || '';
         }
       }
     }
@@ -390,6 +390,7 @@
       cabeceras = matriz[headerIdx];
       if (!cabeceras.includes('Inventario Disponible en el punto de origen')) cabeceras.push('Inventario Disponible en el punto de origen');
       if (!cabeceras.includes('Inventario BODEGA PRINCIPAL CEDI')) cabeceras.push('Inventario BODEGA PRINCIPAL CEDI');
+      if (!cabeceras.includes('Entrega Efectiva')) cabeceras.push('Entrega Efectiva');
 
       datosPendientes = [];
       const numCols = cabeceras.length;
@@ -406,6 +407,7 @@
         fila['_CantOriginal'] = parseInt(diffOrig) || 0;
         fila['Inventario Disponible en el punto de origen'] = 0;
         fila['Inventario BODEGA PRINCIPAL CEDI'] = 0;
+        fila['Entrega Efectiva'] = '';
 
         datosPendientes.push(fila);
       }
@@ -499,6 +501,7 @@
           const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array', dense: true });
           const matriz = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '' });
           parsearMatrizDirecta(matriz);
+          reaplicarSubsanacionesLocal();
           sincronizarDesdeNubeSilencioso();
           poblarSelectoresFiltro();
           aplicarFiltros();
@@ -507,6 +510,7 @@
       } else {
         reader.onload = e => {
           parsearMatrizDirecta(convertirTextoAMatriz(e.target.result));
+          reaplicarSubsanacionesLocal();
           sincronizarDesdeNubeSilencioso();
           poblarSelectoresFiltro();
           aplicarFiltros();
@@ -562,7 +566,6 @@
 
     function aplicarFiltros() {
       const busqueda = document.getElementById('searchInput').value.toLowerCase().trim();
-      
       const opcionesMes = Array.from(document.getElementById('selectMes').selectedOptions).map(o => o.value);
       const opcionesBodega = Array.from(document.getElementById('selectBodega').selectedOptions).map(o => o.value);
 
@@ -583,10 +586,7 @@
         }
 
         if (opcionesMes.length && !opcionesMes.includes(obtenerValorColumna(row, ['Mes_Dispensacion', 'Mes Dispensacion', 'Mes Dispensación']))) return false;
-        
-        // Filtro de Selección Múltiple para Bodega
         if (opcionesBodega.length && !opcionesBodega.includes(obtenerValorColumna(row, ['Bodega Encabezado', 'Bodega']))) return false;
-
         if (clienteSel && obtenerValorColumna(row, ['Razon Social Cliente', 'Cliente']) !== clienteSel) return false;
 
         const st = parseFloat(row['Inventario Disponible en el punto de origen'] || 0);
@@ -651,6 +651,7 @@
         else if (estadoFinal === 'Pendiente Parcial') badgeClass = 'badge-partial';
 
         let fechaOrigen = (obtenerValorColumna(row, ['Fecha Origen Dispensacion', 'Fecha Origen']) || '').split(' ')[0];
+        let entregaEfectiva = row['Entrega Efectiva'] || '-';
 
         const tr = document.createElement('tr');
         tr.innerHTML = `
@@ -667,6 +668,7 @@
           <td><strong>${cantidadPendiente}</strong></td>
           <td><strong>${row['Inventario Disponible en el punto de origen'] || 0}</strong></td>
           <td><strong>${row['Inventario BODEGA PRINCIPAL CEDI'] || 0}</strong></td>
+          <td><strong>${entregaEfectiva}</strong></td>
           <td><span class="badge ${badgeClass}">${estadoFinal}</span></td>
           <td><button class="btn-subsanar" onclick="subsanar(${indexOriginal})">${estadoFinal.includes('Pendiente') ? 'Subsanar' : 'Ajustar'}</button></td>
         `;
@@ -716,6 +718,7 @@
         if (cantidadIngresada < 0) {
           item['Diferencia Real'] = cantOriginal;
           item['Estado Final Mennar'] = 'Pendiente Activo';
+          item['Entrega Efectiva'] = '';
           delete cambiosExistentes[idUnico];
           localStorage.setItem(CHANGES_KEY, JSON.stringify(cambiosExistentes));
           enviarCambioANubeAsync({ idUnico, accion: 'borrar' });
@@ -723,13 +726,23 @@
           return;
         }
 
+        // Sugiere por defecto la fecha de entrega previa si ya existía
+        const fechaSugerida = item['Entrega Efectiva'] || new Date().toISOString().split('T')[0];
+        let fechaEfectiva = prompt(`Ingrese la fecha válida de Entrega Efectiva (AAAA-MM-DD):`, fechaSugerida);
+        
+        if (!fechaEfectiva || isNaN(Date.parse(fechaEfectiva))) {
+          alert('Fecha no válida o cancelada. Operación no guardada.');
+          return;
+        }
+
         const saldo = Math.max(0, cantOriginal - cantidadIngresada);
         item['Diferencia Real'] = saldo;
         let estadoFinal = saldo === 0 ? 'Subsanado' : (cantidadIngresada > 0 ? 'Pendiente Parcial' : 'Pendiente Activo');
-        const fechaEntrega = new Date().toISOString().replace('T', ' ').substring(0, 19);
+        const fechaRegistroSys = new Date().toISOString().replace('T', ' ').substring(0, 19);
 
-        item['Fecha y hora cuando se entrega del Pendiente'] = fechaEntrega;
+        item['Fecha y hora cuando se entrega del Pendiente'] = fechaRegistroSys;
         item['Estado Final Mennar'] = estadoFinal;
+        item['Entrega Efectiva'] = fechaEfectiva;
 
         const payload = {
           idUnico, doc,
@@ -740,7 +753,8 @@
           medicamento: descripcion, codArt,
           codContrato: obtenerValorColumna(item, ['Codigo Contrato']),
           cantEntregada: cantidadIngresada,
-          est: estadoFinal, fecha: fechaEntrega, accion: 'guardar'
+          fechaEntregaEfectiva: fechaEfectiva,
+          est: estadoFinal, fecha: fechaRegistroSys, accion: 'guardar'
         };
 
         cambiosExistentes[idUnico] = payload;
