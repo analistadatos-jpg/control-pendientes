@@ -36,7 +36,7 @@
 
     .grid-filters {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
       gap: 6px;
       align-items: end;
     }
@@ -203,6 +203,14 @@
         </select>
       </div>
       <div>
+        <label for="selectBodPendientes">Inv. Bod. Pendientes NEPS:</label>
+        <select id="selectBodPendientes" onchange="aplicarFiltros()">
+          <option value="">-- Toda Bod. Pendientes --</option>
+          <option value="con_stock">Con Stock (> 0)</option>
+          <option value="sin_stock">Sin Stock (= 0)</option>
+        </select>
+      </div>
+      <div>
         <label for="selectCedi">Inv. CEDI Principal:</label>
         <select id="selectCedi" onchange="aplicarFiltros()">
           <option value="">-- Todo CEDI --</option>
@@ -247,6 +255,7 @@
             <th>Código Cont.</th>
             <th>Cant. Pend.</th>
             <th>Inv. Origen</th>
+            <th>Inv. Bod. Pendientes</th>
             <th>Inv. CEDI</th>
             <th>Fecha Subsanación</th>
             <th>Entrega Efectiva</th>
@@ -398,6 +407,7 @@
 
       cabeceras = matriz[headerIdx];
       if (!cabeceras.includes('Inventario Disponible en el punto de origen')) cabeceras.push('Inventario Disponible en el punto de origen');
+      if (!cabeceras.includes('Inventario BODEGA PENDIENTES NEPS')) cabeceras.push('Inventario BODEGA PENDIENTES NEPS');
       if (!cabeceras.includes('Inventario BODEGA PRINCIPAL CEDI')) cabeceras.push('Inventario BODEGA PRINCIPAL CEDI');
       if (!cabeceras.includes('Fecha Subsanación')) cabeceras.push('Fecha Subsanación');
       if (!cabeceras.includes('Entrega Efectiva')) cabeceras.push('Entrega Efectiva');
@@ -416,6 +426,7 @@
         const diffOrig = obtenerValorColumna(fila, ['Diferencia Real', 'Cant. Pendiente', 'Cantidad Pendiente']);
         fila['_CantOriginal'] = parseInt(diffOrig) || 0;
         fila['Inventario Disponible en el punto de origen'] = 0;
+        fila['Inventario BODEGA PENDIENTES NEPS'] = 0;
         fila['Inventario BODEGA PRINCIPAL CEDI'] = 0;
         fila['Fecha Subsanación'] = '';
         fila['Entrega Efectiva'] = '';
@@ -457,7 +468,7 @@
           mCEDI.set(codNorm, (mCEDI.get(codNorm) || 0) + stock);
         }
         
-        // Mapear específicamente el stock de BODEGA PENDIENTES NEPS por Código de Artículo
+        // Mapear el stock de BODEGA PENDIENTES NEPS por Código de Artículo
         if (bodNorm.includes('pendientesneps') || bodNorm.includes('bodegapendientesneps')) {
           mNEPS.set(codNorm, (mNEPS.get(codNorm) || 0) + stock);
         }
@@ -473,9 +484,6 @@
         const clienteNorm = norm(obtenerValorColumna(row, ['Razon Social Cliente', 'Cliente']));
         const tipoNorm = norm(obtenerValorColumna(row, ['Tipo Comprobante']));
 
-        // REGLA POPAYAN CONTRATO NUEVA EPS:
-        // Si la bodega contiene "popayan" y el cliente/comprobante corresponde a "nueva eps" / "neps", 
-        // cruza el inventario directamente contra BODEGA PENDIENTES NEPS por Código de Artículo.
         const esPopayan = bodNorm.includes('popayan');
         const esNuevaEPS = clienteNorm.includes('nuevaeps') || clienteNorm.includes('neps') || tipoNorm.includes('mennar') || tipoNorm.includes('neps');
 
@@ -489,6 +497,7 @@
         }
 
         row['Inventario Disponible en el punto de origen'] = stockOrigen;
+        row['Inventario BODEGA PENDIENTES NEPS'] = mNEPS.get(codNorm) || 0;
         row['Inventario BODEGA PRINCIPAL CEDI'] = mCEDI.get(codNorm) || 0;
       }
     }
@@ -599,6 +608,7 @@
 
       const clienteSel = document.getElementById('selectCliente').value;
       const inventarioSel = document.getElementById('selectInventario').value;
+      const bodPendientesSel = document.getElementById('selectBodPendientes').value;
       const cediSel = document.getElementById('selectCedi').value;
       const estadoSel = document.getElementById('selectEstado').value;
       const ordenSel = document.getElementById('selectOrdenar').value;
@@ -620,6 +630,10 @@
         const st = parseFloat(row['Inventario Disponible en el punto de origen'] || 0);
         if (inventarioSel === 'con_stock' && st <= 0) return false;
         if (inventarioSel === 'sin_stock' && st > 0) return false;
+
+        const stBodPend = parseFloat(row['Inventario BODEGA PENDIENTES NEPS'] || 0);
+        if (bodPendientesSel === 'con_stock' && stBodPend <= 0) return false;
+        if (bodPendientesSel === 'sin_stock' && stBodPend > 0) return false;
 
         const stCedi = parseFloat(row['Inventario BODEGA PRINCIPAL CEDI'] || 0);
         if (cediSel === 'con_stock' && stCedi <= 0) return false;
@@ -696,6 +710,7 @@
           <td>${obtenerValorColumna(row, ['Codigo Contrato'])}</td>
           <td><strong>${cantidadPendiente}</strong></td>
           <td><strong>${row['Inventario Disponible en el punto de origen'] || 0}</strong></td>
+          <td><strong>${row['Inventario BODEGA PENDIENTES NEPS'] || 0}</strong></td>
           <td><strong>${row['Inventario BODEGA PRINCIPAL CEDI'] || 0}</strong></td>
           <td><strong>${fechaSubsanacion}</strong></td>
           <td><strong>${entregaEfectiva}</strong></td>
