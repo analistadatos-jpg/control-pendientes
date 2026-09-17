@@ -315,9 +315,7 @@
           }
         } catch (e) { console.warn('Inventario secundario no detectado.'); }
 
-        // Primero re-aplicamos los cambios guardados localmente
         reaplicarSubsanacionesLocal();
-        // Luego sincronizamos con la nube
         sincronizarDesdeNubeSilencioso();
         poblarSelectoresFiltro();
         aplicarFiltros();
@@ -432,7 +430,6 @@
       const mEstandar = new Map();
       const mNEPS = new Map();
       const mCEDI = new Map();
-      const nepsPermitidos = ['dispmennar2', 'dispmennar5', 'dispmennar4', 'bodegapendientesneps'];
 
       let colCod = 1, colUni = 8, colBod = 13;
       
@@ -456,8 +453,14 @@
         let stock = parseFloat((cols[colUni] || '0').toString().replace(',', '.')) || 0;
         if (stock < 0) stock = 0;
 
-        if (bodNorm.includes('cedi')) mCEDI.set(codNorm, (mCEDI.get(codNorm) || 0) + stock);
-        if (bodNorm.includes('pendientesneps')) mNEPS.set(codNorm, (mNEPS.get(codNorm) || 0) + stock);
+        if (bodNorm.includes('cedi')) {
+          mCEDI.set(codNorm, (mCEDI.get(codNorm) || 0) + stock);
+        }
+        
+        // Mapear específicamente el stock de BODEGA PENDIENTES NEPS por Código de Artículo
+        if (bodNorm.includes('pendientesneps') || bodNorm.includes('bodegapendientesneps')) {
+          mNEPS.set(codNorm, (mNEPS.get(codNorm) || 0) + stock);
+        }
 
         const key = bodNorm + '_' + codNorm;
         mEstandar.set(key, (mEstandar.get(key) || 0) + stock);
@@ -467,11 +470,23 @@
         const row = datosPendientes[i];
         const bodNorm = norm(obtenerValorColumna(row, ['Bodega Encabezado', 'Bodega']));
         const codNorm = norm(obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo']));
+        const clienteNorm = norm(obtenerValorColumna(row, ['Razon Social Cliente', 'Cliente']));
         const tipoNorm = norm(obtenerValorColumna(row, ['Tipo Comprobante']));
 
-        let stockOrigen = nepsPermitidos.includes(tipoNorm) && mNEPS.has(codNorm)
-          ? mNEPS.get(codNorm)
-          : (mEstandar.get(bodNorm + '_' + codNorm) || 0);
+        // REGLA POPAYAN CONTRATO NUEVA EPS:
+        // Si la bodega contiene "popayan" y el cliente/comprobante corresponde a "nueva eps" / "neps", 
+        // cruza el inventario directamente contra BODEGA PENDIENTES NEPS por Código de Artículo.
+        const esPopayan = bodNorm.includes('popayan');
+        const esNuevaEPS = clienteNorm.includes('nuevaeps') || clienteNorm.includes('neps') || tipoNorm.includes('mennar') || tipoNorm.includes('neps');
+
+        let stockOrigen = 0;
+        if (esPopayan && esNuevaEPS) {
+          stockOrigen = mNEPS.get(codNorm) || 0;
+        } else if (mNEPS.has(codNorm) && (tipoNorm.includes('dispmennar') || tipoNorm.includes('bodegapendientesneps'))) {
+          stockOrigen = mNEPS.get(codNorm);
+        } else {
+          stockOrigen = mEstandar.get(bodNorm + '_' + codNorm) || 0;
+        }
 
         row['Inventario Disponible en el punto de origen'] = stockOrigen;
         row['Inventario BODEGA PRINCIPAL CEDI'] = mCEDI.get(codNorm) || 0;
