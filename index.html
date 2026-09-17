@@ -130,6 +130,11 @@
     tr:nth-child(even) { background-color: #f8f9fa; }
     tr:hover { background-color: #e2e6ea; }
 
+    .stock-rojo {
+      color: #dc3545 !important;
+      font-weight: bold;
+    }
+
     .actions-bar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; }
     .pagination { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; }
     .stats { font-size: 11px; color: var(--secondary); font-weight: bold; }
@@ -468,36 +473,36 @@
           mCEDI.set(codNorm, (mCEDI.get(codNorm) || 0) + stock);
         }
         
-        // Mapear el stock de BODEGA PENDIENTES NEPS por Código de Artículo
+        // Mapear el stock EXCLUSIVAMENTE de BODEGA PENDIENTES NEPS sumado por Código de Artículo
         if (bodNorm.includes('pendientesneps') || bodNorm.includes('bodegapendientesneps')) {
           mNEPS.set(codNorm, (mNEPS.get(codNorm) || 0) + stock);
         }
 
+        // Mapear el stock estándar por [BodegaOrigen_CodigoArticulo]
         const key = bodNorm + '_' + codNorm;
         mEstandar.set(key, (mEstandar.get(key) || 0) + stock);
       }
+
+      // Lista estricta de Tipo Comprobante permitidos para mostrar stock de Bodega Pendientes
+      const tiposPermitidosNEPS = ['dispmennar2', 'dispmennar4', 'dispmennar5', 'disp.mennar2', 'disp.mennar4', 'disp.mennar5'];
 
       for (let i = 0; i < datosPendientes.length; i++) {
         const row = datosPendientes[i];
         const bodNorm = norm(obtenerValorColumna(row, ['Bodega Encabezado', 'Bodega']));
         const codNorm = norm(obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo']));
-        const clienteNorm = norm(obtenerValorColumna(row, ['Razon Social Cliente', 'Cliente']));
         const tipoNorm = norm(obtenerValorColumna(row, ['Tipo Comprobante']));
 
-        const esPopayan = bodNorm.includes('popayan');
-        const esNuevaEPS = clienteNorm.includes('nuevaeps') || clienteNorm.includes('neps') || tipoNorm.includes('mennar') || tipoNorm.includes('neps');
+        // CRUCE 1: Inv. Origen (Físico real de la Bodega del punto)
+        let stockOrigen = mEstandar.get(bodNorm + '_' + codNorm) || 0;
 
-        let stockOrigen = 0;
-        if (esPopayan && esNuevaEPS) {
-          stockOrigen = mNEPS.get(codNorm) || 0;
-        } else if (mNEPS.has(codNorm) && (tipoNorm.includes('dispmennar') || tipoNorm.includes('bodegapendientesneps'))) {
-          stockOrigen = mNEPS.get(codNorm);
-        } else {
-          stockOrigen = mEstandar.get(bodNorm + '_' + codNorm) || 0;
+        // CRUCE 2: Inv. Bod. Pendientes NEPS (Solo para DISP. MENNAR 2, 4 y 5)
+        let stockBodPendientes = 0;
+        if (tiposPermitidosNEPS.some(t => tipoNorm.includes(t))) {
+          stockBodPendientes = mNEPS.get(codNorm) || 0;
         }
 
         row['Inventario Disponible en el punto de origen'] = stockOrigen;
-        row['Inventario BODEGA PENDIENTES NEPS'] = mNEPS.get(codNorm) || 0;
+        row['Inventario BODEGA PENDIENTES NEPS'] = stockBodPendientes;
         row['Inventario BODEGA PRINCIPAL CEDI'] = mCEDI.get(codNorm) || 0;
       }
     }
@@ -696,6 +701,9 @@
         let fechaSubsanacion = row['Fecha Subsanación'] || '-';
         let entregaEfectiva = row['Entrega Efectiva'] || '-';
 
+        const stockOrigenNum = parseFloat(row['Inventario Disponible en el punto de origen'] || 0);
+        const claseStockOrigen = stockOrigenNum > 0 ? 'stock-rojo' : '';
+
         const tr = document.createElement('tr');
         tr.innerHTML = `
           <td>${obtenerValorColumna(row, ['Mes_Dispensacion', 'Mes Dispensacion', 'Mes Dispensación'])}</td>
@@ -709,7 +717,7 @@
           <td>${obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo'])}</td>
           <td>${obtenerValorColumna(row, ['Codigo Contrato'])}</td>
           <td><strong>${cantidadPendiente}</strong></td>
-          <td><strong>${row['Inventario Disponible en el punto de origen'] || 0}</strong></td>
+          <td class="${claseStockOrigen}"><strong>${stockOrigenNum}</strong></td>
           <td><strong>${row['Inventario BODEGA PENDIENTES NEPS'] || 0}</strong></td>
           <td><strong>${row['Inventario BODEGA PRINCIPAL CEDI'] || 0}</strong></td>
           <td><strong>${fechaSubsanacion}</strong></td>
