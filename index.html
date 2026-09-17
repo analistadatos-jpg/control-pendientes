@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>APP CONTROL SUBSANACION DE PENDIENTES MENNAR</title>
-  <!-- Engine SheetJS para lectura de binarios Excel -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <style>
     :root {
@@ -473,17 +472,14 @@
           mCEDI.set(codNorm, (mCEDI.get(codNorm) || 0) + stock);
         }
         
-        // Mapear el stock EXCLUSIVAMENTE de BODEGA PENDIENTES NEPS sumado por Código de Artículo
         if (bodNorm.includes('pendientesneps') || bodNorm.includes('bodegapendientesneps')) {
           mNEPS.set(codNorm, (mNEPS.get(codNorm) || 0) + stock);
         }
 
-        // Mapear el stock estándar por [BodegaOrigen_CodigoArticulo]
         const key = bodNorm + '_' + codNorm;
         mEstandar.set(key, (mEstandar.get(key) || 0) + stock);
       }
 
-      // Lista estricta de Tipo Comprobante permitidos para mostrar stock de Bodega Pendientes
       const tiposPermitidosNEPS = ['dispmennar2', 'dispmennar4', 'dispmennar5', 'disp.mennar2', 'disp.mennar4', 'disp.mennar5'];
 
       for (let i = 0; i < datosPendientes.length; i++) {
@@ -492,10 +488,8 @@
         const codNorm = norm(obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo']));
         const tipoNorm = norm(obtenerValorColumna(row, ['Tipo Comprobante']));
 
-        // CRUCE 1: Inv. Origen (Físico real de la Bodega del punto)
         let stockOrigen = mEstandar.get(bodNorm + '_' + codNorm) || 0;
 
-        // CRUCE 2: Inv. Bod. Pendientes NEPS (Solo para DISP. MENNAR 2, 4 y 5)
         let stockBodPendientes = 0;
         if (tiposPermitidosNEPS.some(t => tipoNorm.includes(t))) {
           stockBodPendientes = mNEPS.get(codNorm) || 0;
@@ -753,17 +747,77 @@
 
     function subsanar(index) {
       const item = datosPendientes[index];
-      const pendienteActual = parseInt(obtenerValorColumna(item, ['Diferencia Real', 'Cant. Pendiente'])) || 0;
-      const cantOriginal = item['_CantOriginal'] || pendienteActual;
+      const pendienteFilaActual = parseInt(obtenerValorColumna(item, ['Diferencia Real', 'Cant. Pendiente'])) || 0;
+      const cantOriginal = item['_CantOriginal'] || pendienteFilaActual;
       const descripcion = obtenerValorColumna(item, ['Descripcion', 'Descripción']);
+      const codigoArt = obtenerValorColumna(item, ['Codigo Articulo', 'Código Artículo']);
+      const bodegaPunto = obtenerValorColumna(item, ['Bodega Encabezado', 'Bodega']);
 
-      const entrada = prompt(`Registrar entrega para:\n${descripcion}\n\nPendiente Inicial: ${cantOriginal} | Pendiente Actual: ${pendienteActual}\n\nIngrese Cantidad Entregada (o número negativo para revertir):`);
+      // Obtener el stock físico aplicable
+      const stockOrigen = parseFloat(item['Inventario Disponible en el punto de origen'] || 0);
+      const stockPendientes = parseFloat(item['Inventario BODEGA PENDIENTES NEPS'] || 0);
+      const stockDisponible = Math.max(stockOrigen, stockPendientes);
+
+      // CALCULAR CONSOLIDADO TOTAL DEL PRODUCTO EN ESTE PUNTO
+      let sumaTotalPendientesPunto = 0;
+      let listaDispensasPunto = [];
+
+      datosPendientes.forEach(r => {
+        const rBodega = obtenerValorColumna(r, ['Bodega Encabezado', 'Bodega']);
+        const rCodigo = obtenerValorColumna(r, ['Codigo Articulo', 'Código Artículo']);
+        const rEstado = r['Estado Final Mennar'] || 'Pendiente Activo';
+        const rCantPend = parseInt(obtenerValorColumna(r, ['Diferencia Real', 'Cant. Pendiente'])) || 0;
+
+        if (rBodega === bodegaPunto && rCodigo === codigoArt && rEstado.includes('Pendiente') && rCantPend > 0) {
+          sumaTotalPendientesPunto += rCantPend;
+          listaDispensasPunto.push(rCantPend);
+        }
+      });
+
+      const totalDispensasCount = listaDispensasPunto.length;
+
+      // Calcular cuántas dispensaciones completas cubre el inventario disponible
+      let dispensasCubiertas = 0;
+      let acumulado = 0;
+      for (let i = 0; i < listaDispensasPunto.length; i++) {
+        if (acumulado + listaDispensasPunto[i] <= stockDisponible) {
+          acumulado += listaDispensasPunto[i];
+          dispensasCubiertas++;
+        } else {
+          break;
+        }
+      }
+
+      // Generar diagnóstico descriptivo
+      let diagnosticoCobertura = "";
+      if (stockDisponible >= sumaTotalPendientesPunto) {
+        diagnosticoCobertura = `✅ CUBRES LA TOTALIDAD (${sumaTotalPendientesPunto} un.). Tu stock de ${stockDisponible} un. alcanza para pagar TODAS las ${totalDispensasCount} dispensas pendientes de este código en este punto.`;
+      } else if (stockDisponible > 0) {
+        diagnosticoCobertura = `⚠️ COBERTURA PARCIAL. Como tienes ${totalDispensasCount} dispensas que te suman ${sumaTotalPendientesPunto} un. y tu inventario es de ${stockDisponible} un., debes pagar ${dispensasCubiertas} dispensas completas.`;
+      } else {
+        diagnosticoCobertura = `❌ SIN STOCK. Tu inventario es 0 un. No puedes cubrir las ${totalDispensasCount} dispensas pendientes (${sumaTotalPendientesPunto} un. requeridas).`;
+      }
+
+      const cantidadSugerida = Math.min(pendienteFilaActual, stockDisponible);
+
+      const entrada = prompt(
+        `ANÁLISIS DE PENDIENTES DEL PUNTO Y MEDIAMENTO:\n` +
+        `Punto: ${bodegaPunto} | Código: ${codigoArt}\n` +
+        `Medicamento: ${descripcion}\n` +
+        `--------------------------------------------------\n` +
+        `• TOTAL PENDIENTES CÓDIGO EN ESTE PUNTO: ${sumaTotalPendientesPunto} un. (${totalDispensasCount} dispensas)\n` +
+        `• INVENTARIO DISPONIBLE: ${stockDisponible} un.\n` +
+        `• DIAGNÓSTICO: ${diagnosticoCobertura}\n` +
+        `--------------------------------------------------\n` +
+        `• Pendiente de ESTE Paciente / Registro: ${pendienteFilaActual} un.\n\n` +
+        `Ingrese Cantidad a Subsanar para esta receta (sugerido: ${cantidadSugerida}):`,
+        cantidadSugerida
+      );
 
       if (entrada !== null && entrada.trim() !== '' && !isNaN(entrada)) {
         const cantidadIngresada = parseInt(entrada);
         const doc = obtenerValorColumna(item, ['Documento']);
-        const codArt = obtenerValorColumna(item, ['Codigo Articulo', 'Código Artículo']);
-        const idUnico = norm(doc + '_' + codArt);
+        const idUnico = norm(doc + '_' + codigoArt);
 
         let cambiosExistentes = {};
         try { cambiosExistentes = JSON.parse(localStorage.getItem(CHANGES_KEY)) || {}; } catch(e){}
@@ -805,11 +859,11 @@
 
         const payload = {
           idUnico, doc,
-          bodega: obtenerValorColumna(item, ['Bodega Encabezado', 'Bodega']),
+          bodega: bodegaPunto,
           cliente: obtenerValorColumna(item, ['Razon Social Cliente', 'Cliente']),
           cedula: obtenerValorColumna(item, ['Cedula Paciente', 'Cedula']),
           paciente: obtenerValorColumna(item, ['Nombre Paciente', 'Nombre']),
-          medicamento: descripcion, codArt,
+          medicamento: descripcion, codArt: codigoArt,
           codContrato: obtenerValorColumna(item, ['Codigo Contrato']),
           cantEntregada: cantidadIngresada,
           fechaSubsanacion: fechaRegistroSys,
