@@ -283,7 +283,6 @@
     const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxHzhqkIySVU1v-QFZnJjPoXVW83pg40X7orwR5d96qs3DWyEBfe3Wl9mwAsnE9AMIr/exec';
     const CHANGES_KEY = 'app_pendientes_subsanaciones';
 
-    // Lista estricta de las 32 columnas solicitadas para la descarga
     const COLUMNAS_SOLICITADAS = [
       'Tipo Comprobante',
       'Documento',
@@ -985,33 +984,46 @@
 
     function exportarCSV(soloFiltrados) {
       const dataset = soloFiltrados ? datosFiltrados : datosPendientes;
-      if (!dataset.length) return alert('No hay datos para exportar.');
+      if (!dataset || !dataset.length) return alert('No hay datos para exportar.');
 
-      // Encabezado estricto con las 32 columnas seleccionadas
-      let csvText = COLUMNAS_SOLICITADAS.join(';') + '\n';
+      // Encabezado estricto con las 32 columnas solicitadas
+      let csvText = COLUMNAS_SOLICITADAS.join(';') + '\r\n';
       
       dataset.forEach(row => {
         const filaFormateada = COLUMNAS_SOLICITADAS.map(col => {
-          let val = obtenerValorColumna(row, [col]);
+          let val = '';
           
-          // Mapeo directo para campos calculados
-          if (col === 'Inventario Disponible en el punto de origen') val = row['Inventario Disponible en el punto de origen'] || 0;
-          if (col === 'Inventario BODEGA PENDIENTES NEPS') val = row['Inventario BODEGA PENDIENTES NEPS'] || 0;
-          if (col === 'Inventario BODEGA PRINCIPAL CEDI') val = row['Inventario BODEGA PRINCIPAL CEDI'] || 0;
-          if (col === 'Fecha Subsanación') val = row['Fecha Subsanación'] || '';
-          if (col === 'Entrega Efectiva') val = row['Entrega Efectiva'] || '';
-          if (col === 'Diferencia') val = row['Diferencia'] !== undefined ? row['Diferencia'] : obtenerValorColumna(row, ['Diferencia Real']);
+          // Mapeo directo para campos calculados e inventarios
+          if (col === 'Inventario Disponible en el punto de origen') {
+            val = row['Inventario Disponible en el punto de origen'] !== undefined ? row['Inventario Disponible en el punto de origen'] : 0;
+          } else if (col === 'Inventario BODEGA PENDIENTES NEPS') {
+            val = row['Inventario BODEGA PENDIENTES NEPS'] !== undefined ? row['Inventario BODEGA PENDIENTES NEPS'] : 0;
+          } else if (col === 'Inventario BODEGA PRINCIPAL CEDI') {
+            val = row['Inventario BODEGA PRINCIPAL CEDI'] !== undefined ? row['Inventario BODEGA PRINCIPAL CEDI'] : 0;
+          } else if (col === 'Fecha Subsanación') {
+            val = row['Fecha Subsanación'] || '';
+          } else if (col === 'Entrega Efectiva') {
+            val = row['Entrega Efectiva'] || '';
+          } else if (col === 'Diferencia') {
+            val = row['Diferencia'] !== undefined ? row['Diferencia'] : obtenerValorColumna(row, ['Diferencia Real', 'Cant. Pendiente']);
+          } else {
+            val = obtenerValorColumna(row, [col]);
+          }
 
-          return `"${(val !== undefined && val !== null ? val : '').toString().replace(/"/g, '""')}"`;
+          valStr = (val !== undefined && val !== null ? val : '').toString().replace(/"/g, '""');
+          return `"${valStr}"`;
         });
-        csvText += filaFormateada.join(';') + '\n';
+        csvText += filaFormateada.join(';') + '\r\n';
       });
 
-      const blob = new Blob(['\uFEFF' + csvText], { type: 'text/csv;charset=utf-8;' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `Total_Dispensacion_Pendientes_32_Campos_${Date.now()}.csv`;
-      a.click();
+      // Fix de compatibilidad para Google Web Apps (Sustituto de Blob/ObjectUrl)
+      const encodedUri = 'data:text/csv;charset=utf-8,\uFEFF' + encodeURIComponent(csvText);
+      const link = document.createElement('a');
+      link.setAttribute('href', encodedUri);
+      link.setAttribute('download', `Total_Dispensacion_Pendientes_32_Campos_${Date.now()}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
     }
 
     function limpiarDatos() {
