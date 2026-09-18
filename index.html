@@ -754,6 +754,10 @@
         const cuotaRecaudo = obtenerValorColumna(row, ['Cuota Recaudo']) || '0';
         const estadoFinal = row['Estado Final Mennar'] || 'Pendiente Activo';
 
+        // Mapeo seguro de Cliente / EPS y Código de Contrato
+        const clienteEPS = obtenerValorColumna(row, ['Razon Social Cliente', 'Cliente']) || row['Razon Social Cliente'] || '';
+        const codigoContrato = obtenerValorColumna(row, ['Codigo Contrato', 'Contrato']) || row['Codigo Contrato'] || '';
+
         let badgeClass = 'badge-pending';
         if (estadoFinal === 'Subsanado') badgeClass = 'badge-done';
         else if (estadoFinal === 'Pendiente Parcial') badgeClass = 'badge-partial';
@@ -781,12 +785,12 @@
           <td>${obtenerValorColumna(row, ['Documento'])}</td>
           <td>${fechaOrigen}</td>
           <td>${obtenerValorColumna(row, ['Bodega Encabezado', 'Bodega'])}</td>
-          <td>${obtenerValorColumna(row, ['Razon Social Cliente', 'Cliente'])}</td>
+          <td>${clienteEPS}</td>
           <td>${obtenerValorColumna(row, ['Cedula Paciente', 'Cedula'])}</td>
           <td>${obtenerValorColumna(row, ['Nombre Paciente', 'Nombre'])}</td>
           <td>${obtenerValorColumna(row, ['Descripcion', 'Descripción'])}</td>
           <td>${obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo'])}</td>
-          <td>${obtenerValorColumna(row, ['Codigo Contrato', 'Contrato'])}</td>
+          <td>${codigoContrato}</td>
           <td><strong>${cantidadPendiente}</strong></td>
           <td>${cuotaRecaudo}</td>
           <td class="${claseStockOrigen}"><strong>${stockOrigenNum}</strong></td>
