@@ -162,7 +162,7 @@
     </div>
     
     <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px;">
-      <button class="btn-success" style="width: auto; font-size: 11px; padding: 0 10px; height: 26px;" onclick="exportarCSV(false)">⬇️ Exportar CSV Completo (27 Cols)</button>
+      <button class="btn-success" style="width: auto; font-size: 11px; padding: 0 10px; height: 26px;" onclick="exportarCSV(false)">⬇️ Exportar CSV Completo (32 Campos Solicitados)</button>
       <button class="btn-danger" style="width: auto; font-size: 11px; padding: 0 10px; height: 26px;" onclick="limpiarDatos()">🗑️ Restablecer / Borrar Datos</button>
     </div>
   </div>
@@ -283,9 +283,44 @@
     const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxHzhqkIySVU1v-QFZnJjPoXVW83pg40X7orwR5d96qs3DWyEBfe3Wl9mwAsnE9AMIr/exec';
     const CHANGES_KEY = 'app_pendientes_subsanaciones';
 
+    // Lista estricta de las 32 columnas solicitadas para la descarga
+    const COLUMNAS_SOLICITADAS = [
+      'Tipo Comprobante',
+      'Documento',
+      'Fecha Origen Dispensacion',
+      'Razon Social Cliente',
+      'Sigla Comercial Cliente',
+      'Cedula Paciente',
+      'Nombre Paciente',
+      'Edad paciente',
+      'Bodega Encabezado',
+      'Tipo Servicio',
+      'DOMICILIO',
+      'CODIGO CIE 10',
+      'DESCRIPCION CIE 10',
+      'COHORTE',
+      'Contrato',
+      'Codigo Articulo',
+      'Descripcion',
+      'Presentacion',
+      'Grupo',
+      'Unidades',
+      'Cantidad Autorizada',
+      'Cantidad Prescrita',
+      'Diferencia',
+      'Municipio Tipo Comprobante',
+      'Usuario Creacion',
+      'Codigo Contrato',
+      'Cuota Recaudo',
+      'Inventario Disponible en el punto de origen',
+      'Inventario BODEGA PENDIENTES NEPS',
+      'Inventario BODEGA PRINCIPAL CEDI',
+      'Fecha Subsanación',
+      'Entrega Efectiva'
+    ];
+
     let datosPendientes = [];
     let datosFiltrados = [];
-    let cabeceras = [];
     let paginaActual = 1;
     const registrosPorPagina = 100;
     let timerDebounce = null;
@@ -430,16 +465,6 @@
       return lineas.map(linea => linea.split(sep).map(v => v.trim().replace(/^"|"$/g, '')));
     }
 
-    const COLUMNAS_REQUERIDAS = [
-      "Tipo Comprobante", "Documento", "Fecha Origen Dispensacion", "Razon Social Cliente",
-      "Sigla Comercial Cliente", "Cedula Paciente", "Nombre Paciente", "Edad paciente",
-      "Bodega Encabezado", "Tipo Servicio", "DOMICILIO", "CODIGO CIE 10",
-      "DESCRIPCION CIE 10", "COHORTE", "Contrato", "Codigo Articulo",
-      "Descripcion", "Presentacion", "Grupo", "Unidades",
-      "Cantidad Autorizada", "Cantidad Prescrita", "Diferencia",
-      "Municipio Tipo Comprobante", "Usuario Creacion", "Codigo Contrato", "Cuota Recaudo"
-    ];
-
     function parsearMatrizDirecta(matriz) {
       if (!matriz || matriz.length === 0) return;
 
@@ -452,15 +477,7 @@
         }
       }
 
-      const cabecerasOriginales = matriz[headerIdx];
-      cabeceras = [...COLUMNAS_REQUERIDAS];
-      
-      if (!cabeceras.includes('Inventario Disponible en el punto de origen')) cabeceras.push('Inventario Disponible en el punto de origen');
-      if (!cabeceras.includes('Inventario BODEGA PENDIENTES NEPS')) cabeceras.push('Inventario BODEGA PENDIENTES NEPS');
-      if (!cabeceras.includes('Inventario BODEGA PRINCIPAL CEDI')) cabeceras.push('Inventario BODEGA PRINCIPAL CEDI');
-      if (!cabeceras.includes('Fecha Subsanación')) cabeceras.push('Fecha Subsanación');
-      if (!cabeceras.includes('Entrega Efectiva')) cabeceras.push('Entrega Efectiva');
-
+      const cabecerasOriginales = matriz[headerIdx].map(c => c.trim()).filter(Boolean);
       datosPendientes = [];
 
       for (let i = headerIdx + 1; i < matriz.length; i++) {
@@ -469,10 +486,8 @@
         
         const fila = {};
         
-        COLUMNAS_REQUERIDAS.forEach(colNombre => {
-          const targetNorm = norm(colNombre);
-          const idxOrig = cabecerasOriginales.findIndex(c => norm(c) === targetNorm);
-          fila[colNombre] = idxOrig !== -1 && rowArr[idxOrig] !== undefined ? rowArr[idxOrig] : '';
+        cabecerasOriginales.forEach((colNombre, idx) => {
+          fila[colNombre] = rowArr[idx] !== undefined ? rowArr[idx] : '';
         });
 
         const diffOrig = Math.abs(parseFloat(obtenerValorColumna(fila, ['Diferencia', 'Diferencia Real', 'Cant. Pendiente'])) || 0);
@@ -484,6 +499,7 @@
         fila['Inventario BODEGA PRINCIPAL CEDI'] = 0;
         fila['Fecha Subsanación'] = '';
         fila['Entrega Efectiva'] = '';
+        fila['Estado Final Mennar'] = 'Pendiente Activo';
 
         datosPendientes.push(fila);
       }
@@ -971,15 +987,30 @@
       const dataset = soloFiltrados ? datosFiltrados : datosPendientes;
       if (!dataset.length) return alert('No hay datos para exportar.');
 
-      let csvText = cabeceras.join(';') + '\n';
+      // Encabezado estricto con las 32 columnas seleccionadas
+      let csvText = COLUMNAS_SOLICITADAS.join(';') + '\n';
+      
       dataset.forEach(row => {
-        csvText += cabeceras.map(h => `"${(row[h] || '').toString().replace(/"/g, '""')}"`).join(';') + '\n';
+        const filaFormateada = COLUMNAS_SOLICITADAS.map(col => {
+          let val = obtenerValorColumna(row, [col]);
+          
+          // Mapeo directo para campos calculados
+          if (col === 'Inventario Disponible en el punto de origen') val = row['Inventario Disponible en el punto de origen'] || 0;
+          if (col === 'Inventario BODEGA PENDIENTES NEPS') val = row['Inventario BODEGA PENDIENTES NEPS'] || 0;
+          if (col === 'Inventario BODEGA PRINCIPAL CEDI') val = row['Inventario BODEGA PRINCIPAL CEDI'] || 0;
+          if (col === 'Fecha Subsanación') val = row['Fecha Subsanación'] || '';
+          if (col === 'Entrega Efectiva') val = row['Entrega Efectiva'] || '';
+          if (col === 'Diferencia') val = row['Diferencia'] !== undefined ? row['Diferencia'] : obtenerValorColumna(row, ['Diferencia Real']);
+
+          return `"${(val !== undefined && val !== null ? val : '').toString().replace(/"/g, '""')}"`;
+        });
+        csvText += filaFormateada.join(';') + '\n';
       });
 
       const blob = new Blob(['\uFEFF' + csvText], { type: 'text/csv;charset=utf-8;' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = `Total_Dispensacion_Pendientes_Export_${Date.now()}.csv`;
+      a.download = `Total_Dispensacion_Pendientes_32_Campos_${Date.now()}.csv`;
       a.click();
     }
 
