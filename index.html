@@ -162,7 +162,7 @@
     </div>
     
     <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px;">
-      <button class="btn-success" style="width: auto; font-size: 11px; padding: 0 10px; height: 26px;" onclick="exportarCSV(false)">⬇️ Exportar CSV Completo (32 Campos)</button>
+      <button class="btn-success" style="width: auto; font-size: 11px; padding: 0 10px; height: 26px;" onclick="exportarCSV(false)">⬇️ Exportar CSV Completo</button>
       <button class="btn-danger" style="width: auto; font-size: 11px; padding: 0 10px; height: 26px;" onclick="limpiarDatos()">🗑️ Restablecer / Borrar Datos</button>
     </div>
   </div>
@@ -283,20 +283,45 @@
     const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxHzhqkIySVU1v-QFZnJjPoXVW83pg40X7orwR5d96qs3DWyEBfe3Wl9mwAsnE9AMIr/exec';
     const CHANGES_KEY = 'app_pendientes_subsanaciones';
 
-    const COLUMNAS_SOLICITADAS = [
-      'Tipo Comprobante', 'Documento', 'Fecha Origen Dispensacion', 'Razon Social Cliente',
-      'Sigla Comercial Cliente', 'Cedula Paciente', 'Nombre Paciente', 'Edad paciente',
-      'Bodega Encabezado', 'Tipo Servicio', 'DOMICILIO', 'CODIGO CIE 10',
-      'DESCRIPCION CIE 10', 'COHORTE', 'Contrato', 'Codigo Articulo',
-      'Descripcion', 'Presentacion', 'Grupo', 'Unidades',
-      'Cantidad Autorizada', 'Cantidad Prescrita', 'Diferencia', 'Municipio Tipo Comprobante',
-      'Usuario Creacion', 'Codigo Contrato', 'Cuota Recaudo',
-      'Inventario Disponible en el punto de origen', 'Inventario BODEGA PENDIENTES NEPS',
-      'Inventario BODEGA PRINCIPAL CEDI', 'Fecha Subsanación', 'Entrega Efectiva'
-    ];
+    // Mapeo flexible para exportar la totalidad de campos
+    const MAPEO_COLUMNAS = {
+      'Tipo Comprobante': ['Tipo Comprobante', 'TipoComprobante', 'Tipo Comprobante '],
+      'Documento': ['Documento', 'Num Documento', 'Nro Documento'],
+      'Fecha Origen Dispensacion': ['Fecha Origen Dispensacion', 'Fecha Origen Dispensación', 'Fecha Origen', 'FechaDispensacion'],
+      'Razon Social Cliente': ['Razon Social Cliente', 'Razón Social Cliente', 'Cliente'],
+      'Sigla Comercial Cliente': ['Sigla Comercial Cliente', 'Sigla Cliente'],
+      'Cedula Paciente': ['Cedula Paciente', 'Cédula Paciente', 'Cedula', 'Cédula'],
+      'Nombre Paciente': ['Nombre Paciente', 'Paciente', 'Nombre'],
+      'Edad paciente': ['Edad paciente', 'Edad Paciente', 'Edad'],
+      'Bodega Encabezado': ['Bodega Encabezado', 'Bodega', 'Punto'],
+      'Tipo Servicio': ['Tipo Servicio', 'Servicio'],
+      'DOMICILIO': ['DOMICILIO', 'Domicilio'],
+      'CODIGO CIE 10': ['CODIGO CIE 10', 'Codigo CIE 10', 'CIE10', 'CIE 10'],
+      'DESCRIPCION CIE 10': ['DESCRIPCION CIE 10', 'Descripción CIE 10', 'Diagnostico', 'Diagnóstico'],
+      'COHORTE': ['COHORTE', 'Cohorte'],
+      'Contrato': ['Contrato'],
+      'Codigo Articulo': ['Codigo Articulo', 'Código Artículo', 'Codigo Art', 'CodigoArticulo'],
+      'Descripcion': ['Descripcion', 'Descripción', 'Medicamento', 'Producto'],
+      'Presentacion': ['Presentacion', 'Presentación'],
+      'Grupo': ['Grupo'],
+      'Unidades': ['Unidades'],
+      'Cantidad Autorizada': ['Cantidad Autorizada', 'Cant Autorizada'],
+      'Cantidad Prescrita': ['Cantidad Prescrita', 'Cant Prescrita'],
+      'Diferencia': ['Diferencia', 'Diferencia Real', 'Cant Pendiente', 'Cantidad Pendiente'],
+      'Municipio Tipo Comprobante': ['Municipio Tipo Comprobante', 'Municipio'],
+      'Usuario Creacion': ['Usuario Creacion', 'Usuario Creación', 'Usuario'],
+      'Codigo Contrato': ['Codigo Contrato', 'Código Contrato', 'Cod Contrato'],
+      'Cuota Recaudo': ['Cuota Recaudo', 'CuotaRecaudo', 'Recaudo'],
+      'Inventario Disponible en el punto de origen': ['Inventario Disponible en el punto de origen', 'Inv Origen'],
+      'Inventario BODEGA PENDIENTES NEPS': ['Inventario BODEGA PENDIENTES NEPS', 'Inv Pendientes NEPS'],
+      'Inventario BODEGA PRINCIPAL CEDI': ['Inventario BODEGA PRINCIPAL CEDI', 'Inv CEDI'],
+      'Fecha Subsanación': ['Fecha Subsanación', 'Fecha Subsanacion'],
+      'Entrega Efectiva': ['Entrega Efectiva']
+    };
 
     let datosPendientes = [];
     let datosFiltrados = [];
+    let cabecerasGuardadas = [];
     let paginaActual = 1;
     const registrosPorPagina = 100;
     let timerDebounce = null;
@@ -333,15 +358,13 @@
     }
 
     function obtenerMesDeFila(row) {
-      let mesText = obtenerValorColumna(row, ['Mes_Dispensacion', 'Mes Dispensacion', 'Mes Dispensación']);
+      let mesText = obtenerValorColumna(row, ['Mes_Dispensacion', 'Mes Dispensacion', 'Mes Dispensación', 'Mes']);
       if (!mesText) {
         const fechaOrigen = (obtenerValorColumna(row, ['Fecha Origen Dispensacion', 'Fecha Origen']) || '').split(' ')[0];
         if (fechaOrigen) {
           const partes = fechaOrigen.includes('/') ? fechaOrigen.split('/') : fechaOrigen.split('-');
           if (partes.length === 3) {
-            let mIdx = -1;
-            if (partes[0].length === 4) mIdx = parseInt(partes[1]) - 1;
-            else mIdx = parseInt(partes[1]) - 1;
+            let mIdx = parseInt(partes[1]) - 1;
             const nombresMeses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
             mesText = nombresMeses[mIdx] || '';
           }
@@ -469,7 +492,7 @@
         }
       }
 
-      const cabecerasOriginales = matriz[headerIdx].map(c => c.trim()).filter(Boolean);
+      cabecerasGuardadas = matriz[headerIdx].map(c => c.trim()).filter(Boolean);
       datosPendientes = [];
 
       for (let i = headerIdx + 1; i < matriz.length; i++) {
@@ -478,7 +501,7 @@
         
         const fila = {};
         
-        cabecerasOriginales.forEach((colNombre, idx) => {
+        cabecerasGuardadas.forEach((colNombre, idx) => {
           fila[colNombre] = rowArr[idx] !== undefined ? rowArr[idx] : '';
         });
 
@@ -957,18 +980,38 @@
       const dataset = soloFiltrados ? datosFiltrados : datosPendientes;
       if (!dataset.length) return alert('No hay datos para exportar.');
 
-      let csvText = COLUMNAS_SOLICITADAS.join(';') + '\n';
+      // Si tenemos cabeceras dinámicas del archivo cargado, las usamos garantizando exportación exacta
+      let columnasAExportar = cabecerasGuardadas.length > 0 ? [...cabecerasGuardadas] : Object.keys(MAPEO_COLUMNAS);
+
+      // Aseguramos que las columnas de resultado calculado estén presentes al final si no venían
+      const extraCols = [
+        'Inventario Disponible en el punto de origen',
+        'Inventario BODEGA PENDIENTES NEPS',
+        'Inventario BODEGA PRINCIPAL CEDI',
+        'Fecha Subsanación',
+        'Entrega Efectiva'
+      ];
+
+      extraCols.forEach(col => {
+        if (!columnasAExportar.some(c => norm(c) === norm(col))) {
+          columnasAExportar.push(col);
+        }
+      });
+
+      let csvText = columnasAExportar.join(';') + '\n';
       
       dataset.forEach(row => {
-        const filaFormateada = COLUMNAS_SOLICITADAS.map(col => {
-          let val = obtenerValorColumna(row, [col]);
-          
-          if (col === 'Inventario Disponible en el punto de origen') val = row['Inventario Disponible en el punto de origen'] || 0;
-          if (col === 'Inventario BODEGA PENDIENTES NEPS') val = row['Inventario BODEGA PENDIENTES NEPS'] || 0;
-          if (col === 'Inventario BODEGA PRINCIPAL CEDI') val = row['Inventario BODEGA PRINCIPAL CEDI'] || 0;
-          if (col === 'Fecha Subsanación') val = row['Fecha Subsanación'] || '';
-          if (col === 'Entrega Efectiva') val = row['Entrega Efectiva'] || '';
-          if (col === 'Diferencia') val = row['Diferencia'] !== undefined ? row['Diferencia'] : obtenerValorColumna(row, ['Diferencia Real']);
+        const filaFormateada = columnasAExportar.map(col => {
+          let val = '';
+          if (MAPEO_COLUMNAS[col]) {
+            val = obtenerValorColumna(row, MAPEO_COLUMNAS[col]);
+          } else {
+            val = row[col] !== undefined ? row[col] : obtenerValorColumna(row, [col]);
+          }
+
+          if (val === '' || val === undefined || val === null) {
+            val = row[col] !== undefined ? row[col] : '';
+          }
 
           return `"${(val !== undefined && val !== null ? val : '').toString().replace(/"/g, '""')}"`;
         });
