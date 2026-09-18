@@ -23,13 +23,7 @@
       color: var(--dark);
     }
 
-    h1 { 
-      color: var(--primary); 
-      margin: 0 0 10px 0; 
-      font-size: 18px; 
-      text-transform: uppercase; 
-      font-weight: 700; 
-    }
+    h1 { color: var(--primary); margin: 0 0 10px 0; font-size: 18px; text-transform: uppercase; font-weight: 700; }
 
     .card {
       background: white;
@@ -84,18 +78,15 @@
     .btn-success { background-color: var(--success); color: white; }
     .btn-filter-export { background-color: #0d6efd; color: white; padding: 2px 8px; font-size: 11px; border-radius: 4px; width: auto; height: 26px; }
     .btn-danger { background-color: var(--danger); color: white; }
-    .btn-subsanar { background-color: var(--success); color: white; padding: 2px 6px; font-size: 10px; border-radius: 3px; height: 22px; width: auto; display: block; margin: 0 auto; }
+    .btn-subsanar { background-color: var(--success); color: white; padding: 2px 6px; font-size: 10px; border-radius: 3px; height: 22px; }
     .btn-pag { background-color: #e9ecef; color: var(--dark); border: 1px solid #ced4da; padding: 2px 8px; width: auto; font-size: 11px; height: 26px; }
 
     .badge {
-      padding: 3px 6px;
+      padding: 2px 5px;
       border-radius: 3px;
       font-size: 10px;
       font-weight: bold;
-      display: block;
-      text-align: center;
-      white-space: normal;
-      line-height: 1.1;
+      display: inline-block;
     }
     .badge-pending { background-color: #ffe69c; color: #664d03; }
     .badge-partial { background-color: #cff4fc; color: #055160; }
@@ -116,16 +107,11 @@
     
     th, td { 
       border: 1px solid #dee2e6; 
-      padding: 4px 5px;
+      padding: 3px 5px;
       text-align: left; 
-      white-space: nowrap;
-      line-height: 1.2;
-    }
-
-    td.cell-text {
       white-space: normal;
-      word-break: break-word;
-      min-width: 180px;
+      word-wrap: break-word;
+      line-height: 1.1;
     }
     
     th { 
@@ -137,7 +123,6 @@
       font-size: 10px;
       cursor: pointer;
       user-select: none;
-      white-space: nowrap;
     }
     th:hover { background-color: #dbe2e8; }
 
@@ -148,8 +133,6 @@
       color: #dc3545 !important;
       font-weight: bold;
     }
-
-    .text-center { text-align: center; }
 
     .actions-bar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; }
     .pagination { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; }
@@ -163,7 +146,7 @@
   <div class="card">
     <div class="grid-files">
       <div>
-        <label for="csvFileInput">1. Cargar Archivo de Pendientes (DetalladoDispensacion3 / CSV / Excel):</label>
+        <label for="csvFileInput">1. Cargar Archivo de Pendientes (CSV / Excel):</label>
         <div style="display: flex; gap: 6px;">
           <input type="file" id="csvFileInput" accept=".csv, .xlsx, .xls, .txt" onclick="this.value=null;" />
           <button class="btn-primary" style="width: auto; padding: 0 10px;" onclick="cargarArchivoManualmente()">Procesar</button>
@@ -179,7 +162,7 @@
     </div>
     
     <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px;">
-      <button class="btn-success" style="width: auto; font-size: 11px; padding: 0 10px; height: 26px;" onclick="exportarCSV(false)">⬇️ Exportar CSV Completo (32 Campos Solicitados)</button>
+      <button class="btn-success" style="width: auto; font-size: 11px; padding: 0 10px; height: 26px;" onclick="exportarCSV(false)">⬇️ Exportar CSV Completo (32 Campos)</button>
       <button class="btn-danger" style="width: auto; font-size: 11px; padding: 0 10px; height: 26px;" onclick="limpiarDatos()">🗑️ Restablecer / Borrar Datos</button>
     </div>
   </div>
@@ -194,8 +177,8 @@
       <div>
         <label for="selectOrdenar">Ordenar Por:</label>
         <select id="selectOrdenar" onchange="aplicarFiltros()">
-          <option value="fecha_asc">Fecha Origen (Más Antiguo) ⬇️</option>
-          <option value="fecha_desc">Fecha Origen (Más Reciente) ⬆️</option>
+          <option value="fecha_asc">Fecha Origen (Más Antiguo primero) ⬇️</option>
+          <option value="fecha_desc">Fecha Origen (Más Reciente primero) ⬆️</option>
           <option value="codigo_asc">Código Artículo (A-Z)</option>
           <option value="codigo_desc">Código Artículo (Z-A)</option>
           <option value="mes_asc">Mes Dispensación (Cronológico)</option>
@@ -257,7 +240,7 @@
         <h3 style="margin: 0; font-size: 13px;">Registros</h3>
         <button class="btn-filter-export" onclick="exportarCSV(true)">📥 Descargar Filtro Actual (CSV/Excel)</button>
       </div>
-      <div class="stats" id="infoContador">Inicializando...</div>
+      <div class="stats" id="infoContador">Seleccione los archivos a cargar...</div>
     </div>
     
     <div class="table-container">
@@ -303,10 +286,11 @@
     const COLUMNAS_SOLICITADAS = [
       'Tipo Comprobante', 'Documento', 'Fecha Origen Dispensacion', 'Razon Social Cliente',
       'Sigla Comercial Cliente', 'Cedula Paciente', 'Nombre Paciente', 'Edad paciente',
-      'Bodega Encabezado', 'Tipo Servicio', 'DOMICILIO', 'CODIGO CIE 10', 'DESCRIPCION CIE 10',
-      'COHORTE', 'Contrato', 'Codigo Articulo', 'Descripcion', 'Presentacion', 'Grupo',
-      'Unidades', 'Cantidad Autorizada', 'Cantidad Prescrita', 'Diferencia',
-      'Municipio Tipo Comprobante', 'Usuario Creacion', 'Codigo Contrato', 'Cuota Recaudo',
+      'Bodega Encabezado', 'Tipo Servicio', 'DOMICILIO', 'CODIGO CIE 10',
+      'DESCRIPCION CIE 10', 'COHORTE', 'Contrato', 'Codigo Articulo',
+      'Descripcion', 'Presentacion', 'Grupo', 'Unidades',
+      'Cantidad Autorizada', 'Cantidad Prescrita', 'Diferencia', 'Municipio Tipo Comprobante',
+      'Usuario Creacion', 'Codigo Contrato', 'Cuota Recaudo',
       'Inventario Disponible en el punto de origen', 'Inventario BODEGA PENDIENTES NEPS',
       'Inventario BODEGA PRINCIPAL CEDI', 'Fecha Subsanación', 'Entrega Efectiva'
     ];
@@ -334,24 +318,22 @@
       return res;
     }
 
-    function formatearFecha(strFecha) {
-      if (!strFecha) return '';
-      let limpia = strFecha.split(' ')[0].split(',')[0].trim();
-      let partes = limpia.includes('/') ? limpia.split('/') : limpia.split('-');
-      if (partes.length === 3) {
-        let a, m, d;
-        if (partes[0].length === 4) {
-          a = partes[0]; m = partes[1].padStart(2, '0'); d = partes[2].padStart(2, '0');
-        } else {
-          a = partes[2]; m = partes[1].padStart(2, '0'); d = partes[0].padStart(2, '0');
+    function obtenerValorColumna(row, posiblesNombres) {
+      if (!row) return '';
+      
+      // Fallback por sinonimia y búsqueda flex
+      const keys = Object.keys(row);
+      for (let i = 0; i < posiblesNombres.length; i++) {
+        const target = norm(posiblesNombres[i]);
+        for (let j = 0; j < keys.length; j++) {
+          if (norm(keys[j]) === target) return row[keys[j]];
         }
-        return `${a}-${m}-${d}`;
       }
-      return limpia;
+      return '';
     }
 
     function obtenerMesDeFila(row) {
-      let mesText = obtenerValorColumna(row, ['Mes_Dispensacion', 'Mes Dispensacion', 'Mes Dispensación', 'Mes']);
+      let mesText = obtenerValorColumna(row, ['Mes_Dispensacion', 'Mes Dispensacion', 'Mes Dispensación']);
       if (!mesText) {
         const fechaOrigen = (obtenerValorColumna(row, ['Fecha Origen Dispensacion', 'Fecha Origen']) || '').split(' ')[0];
         if (fechaOrigen) {
@@ -371,29 +353,31 @@
     });
 
     async function cargarArchivosAutomaticos() {
-      document.getElementById('infoContador').textContent = 'Sincronizando reportes e inventario...';
       try {
         const timestamp = '?v=' + Date.now();
         const respPend = await fetch('./' + encodeURIComponent(ARCHIVO_PENDIENTES) + timestamp);
         if (respPend.ok) {
+          document.getElementById('infoContador').textContent = 'Sincronizando reportes e inventario...';
           const textoPend = await respPend.text();
           parsearMatrizDirecta(convertirTextoAMatriz(textoPend));
+          
+          try {
+            const respInv = await fetch('./' + encodeURIComponent(ARCHIVO_INVENTARIO) + timestamp);
+            if (respInv.ok) {
+              const textoInv = await respInv.text();
+              procesarMatrizInventarioFast(convertirTextoAMatriz(textoInv));
+            }
+          } catch (e) { console.warn('Sin archivo de inventario por defecto.'); }
+
+          reaplicarSubsanacionesLocal();
+          sincronizarDesdeNubeSilencioso();
+          poblarSelectoresFiltro();
+          aplicarFiltros();
+        } else {
+          document.getElementById('infoContador').textContent = 'Por favor seleccione los archivos para iniciar.';
         }
-
-        try {
-          const respInv = await fetch('./' + encodeURIComponent(ARCHIVO_INVENTARIO) + timestamp);
-          if (respInv.ok) {
-            const textoInv = await respInv.text();
-            procesarMatrizInventarioFast(convertirTextoAMatriz(textoInv));
-          }
-        } catch (e) { console.warn('Inventario secundario no detectado.'); }
-
-        reaplicarSubsanacionesLocal();
-        sincronizarDesdeNubeSilencioso();
-        poblarSelectoresFiltro();
-        aplicarFiltros();
       } catch (err) {
-        document.getElementById('infoContador').textContent = 'Cargue archivos manualmente.';
+        document.getElementById('infoContador').textContent = 'Por favor cargue los archivos manualmente.';
       }
     }
 
@@ -493,7 +477,7 @@
           fila[colNombre] = rowArr[idx] !== undefined ? rowArr[idx] : '';
         });
 
-        const diffOrig = Math.abs(parseFloat(obtenerValorColumna(fila, ['Diferencia', 'Diferencia Real', 'Cant. Pendiente', 'Unidades'])) || 0);
+        const diffOrig = Math.abs(parseFloat(obtenerValorColumna(fila, ['Diferencia', 'Diferencia Real', 'Cant. Pendiente'])) || 0);
         fila['Diferencia'] = Math.abs(Math.round(diffOrig));
         fila['_CantOriginal'] = Math.abs(Math.round(diffOrig));
         
@@ -570,18 +554,6 @@
       }
     }
 
-    function obtenerValorColumna(row, posiblesNombres) {
-      if (!row) return '';
-      const keys = Object.keys(row);
-      for (let i = 0; i < posiblesNombres.length; i++) {
-        const target = norm(posiblesNombres[i]);
-        for (let j = 0; j < keys.length; j++) {
-          if (norm(keys[j]) === target) return row[keys[j]];
-        }
-      }
-      return '';
-    }
-
     function convertirFechaParaOrdenar(strFecha) {
       if (!strFecha) return 0;
       let limpia = strFecha.split(' ')[0].split(',')[0].trim();
@@ -596,7 +568,7 @@
     function cargarArchivoManualmente() {
       const input = document.getElementById('csvFileInput');
       const file = input.files[0];
-      if (!file) return;
+      if (!file) return alert('Selecciona el archivo de pendientes primero.');
 
       document.getElementById('infoContador').textContent = 'Procesando archivo...';
       const reader = new FileReader();
@@ -683,7 +655,7 @@
 
       datosFiltrados = datosPendientes.filter(row => {
         if (busqueda) {
-          const c = obtenerValorColumna(row, ['Cedula Paciente', 'Cedula', 'Cedula Paciente']);
+          const c = obtenerValorColumna(row, ['Cedula Paciente', 'Cedula']);
           const n = obtenerValorColumna(row, ['Nombre Paciente', 'Nombre']);
           const d = obtenerValorColumna(row, ['Documento']);
           const a = obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo']);
@@ -761,15 +733,16 @@
         if (estadoFinal === 'Subsanado') badgeClass = 'badge-done';
         else if (estadoFinal === 'Pendiente Parcial') badgeClass = 'badge-partial';
 
-        let fechaOrigenRaw = obtenerValorColumna(row, ['Fecha Origen Dispensacion', 'Fecha Origen']);
-        let fechaOrigen = formatearFecha(fechaOrigenRaw);
-
-        let fechaSubsanacion = '';
-        let entregaEfectiva = '';
+        let fechaOrigen = (obtenerValorColumna(row, ['Fecha Origen Dispensacion', 'Fecha Origen']) || '').split(' ')[0];
+        let fechaSubsanacion = '-';
+        let entregaEfectiva = '-';
 
         if (estadoFinal !== 'Pendiente Activo') {
-          fechaSubsanacion = row['Fecha Subsanación'] || '';
-          entregaEfectiva = row['Entrega Efectiva'] || '';
+          fechaSubsanacion = row['Fecha Subsanación'] || '-';
+          entregaEfectiva = row['Entrega Efectiva'] || '-';
+        } else {
+          row['Fecha Subsanación'] = '';
+          row['Entrega Efectiva'] = '';
         }
 
         const stockOrigenNum = parseFloat(row['Inventario Disponible en el punto de origen'] || 0);
@@ -786,16 +759,16 @@
           <td>${obtenerValorColumna(row, ['Razon Social Cliente', 'Cliente'])}</td>
           <td>${obtenerValorColumna(row, ['Cedula Paciente', 'Cedula'])}</td>
           <td>${obtenerValorColumna(row, ['Nombre Paciente', 'Nombre'])}</td>
-          <td class="cell-text">${obtenerValorColumna(row, ['Descripcion', 'Descripción'])}</td>
+          <td>${obtenerValorColumna(row, ['Descripcion', 'Descripción'])}</td>
           <td>${obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo'])}</td>
           <td>${obtenerValorColumna(row, ['Codigo Contrato', 'Contrato'])}</td>
-          <td class="text-center"><strong>${cantidadPendiente}</strong></td>
-          <td class="text-center">${cuotaRecaudo}</td>
-          <td class="text-center ${claseStockOrigen}"><strong>${stockOrigenNum}</strong></td>
-          <td class="text-center"><strong>${row['Inventario BODEGA PENDIENTES NEPS'] || 0}</strong></td>
-          <td class="text-center"><strong>${row['Inventario BODEGA PRINCIPAL CEDI'] || 0}</strong></td>
-          <td class="text-center">${fechaSubsanacion}</td>
-          <td class="text-center">${entregaEfectiva}</td>
+          <td><strong>${cantidadPendiente}</strong></td>
+          <td>${cuotaRecaudo}</td>
+          <td class="${claseStockOrigen}"><strong>${stockOrigenNum}</strong></td>
+          <td><strong>${row['Inventario BODEGA PENDIENTES NEPS'] || 0}</strong></td>
+          <td><strong>${row['Inventario BODEGA PRINCIPAL CEDI'] || 0}</strong></td>
+          <td><strong>${fechaSubsanacion}</strong></td>
+          <td><strong>${entregaEfectiva}</strong></td>
           <td><span class="badge ${badgeClass}">${estadoFinal}</span></td>
           <td><button class="btn-subsanar" onclick="subsanar(${indexOriginal})">${estadoFinal.includes('Pendiente') ? 'Subsanar' : 'Ajustar'}</button></td>
         `;
@@ -954,17 +927,7 @@
           fechaSubsanacion: fechaRegistroSys,
           fechaEntregaEfectiva: fechaEfectiva,
           est: estadoFinal, 
-          accion: 'guardar',
-          
-          generadoPor: 'Sistema_App',
-          actualizadoPor: 'Sistema_App',
-          tipoDispensa: obtenerValorColumna(item, ['Tipo Servicio']) || 'POS',
-          presentacion: obtenerValorColumna(item, ['Presentacion']),
-          grupo: obtenerValorColumna(item, ['Grupo']),
-          cie10: obtenerValorColumna(item, ['DESCRIPCION CIE 10', 'CODIGO CIE 10']),
-          cohorte: obtenerValorColumna(item, ['COHORTE']),
-          tipoContrato: obtenerValorColumna(item, ['Contrato']),
-          prefijoSede: doc.substring(0, 3)
+          accion: 'guardar'
         };
 
         cambiosExistentes[idUnico] = payload;
@@ -1010,7 +973,7 @@
       const blob = new Blob(['\uFEFF' + csvText], { type: 'text/csv;charset=utf-8;' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = `Total_Dispensacion_Pendientes_32_Campos_${Date.now()}.csv`;
+      a.download = `Reporte_Subsanaciones_${Date.now()}.csv`;
       a.click();
     }
 
