@@ -23,7 +23,13 @@
       color: var(--dark);
     }
 
-    h1 { color: var(--primary); margin: 0 0 10px 0; font-size: 18px; text-transform: uppercase; font-weight: 700; }
+    h1 { 
+      color: var(--primary); 
+      margin: 0 0 10px 0; 
+      font-size: 18px; 
+      text-transform: uppercase; 
+      font-weight: 700; 
+    }
 
     .card {
       background: white;
@@ -78,15 +84,18 @@
     .btn-success { background-color: var(--success); color: white; }
     .btn-filter-export { background-color: #0d6efd; color: white; padding: 2px 8px; font-size: 11px; border-radius: 4px; width: auto; height: 26px; }
     .btn-danger { background-color: var(--danger); color: white; }
-    .btn-subsanar { background-color: var(--success); color: white; padding: 2px 6px; font-size: 10px; border-radius: 3px; height: 22px; }
+    .btn-subsanar { background-color: var(--success); color: white; padding: 2px 6px; font-size: 10px; border-radius: 3px; height: 22px; width: auto; display: block; margin: 0 auto; }
     .btn-pag { background-color: #e9ecef; color: var(--dark); border: 1px solid #ced4da; padding: 2px 8px; width: auto; font-size: 11px; height: 26px; }
 
     .badge {
-      padding: 2px 5px;
+      padding: 3px 6px;
       border-radius: 3px;
       font-size: 10px;
       font-weight: bold;
-      display: inline-block;
+      display: block;
+      text-align: center;
+      white-space: normal;
+      line-height: 1.1;
     }
     .badge-pending { background-color: #ffe69c; color: #664d03; }
     .badge-partial { background-color: #cff4fc; color: #055160; }
@@ -107,11 +116,16 @@
     
     th, td { 
       border: 1px solid #dee2e6; 
-      padding: 3px 5px;
+      padding: 4px 5px;
       text-align: left; 
+      white-space: nowrap;
+      line-height: 1.2;
+    }
+
+    td.cell-text {
       white-space: normal;
-      word-wrap: break-word;
-      line-height: 1.1;
+      word-break: break-word;
+      min-width: 180px;
     }
     
     th { 
@@ -123,6 +137,7 @@
       font-size: 10px;
       cursor: pointer;
       user-select: none;
+      white-space: nowrap;
     }
     th:hover { background-color: #dbe2e8; }
 
@@ -133,6 +148,8 @@
       color: #dc3545 !important;
       font-weight: bold;
     }
+
+    .text-center { text-align: center; }
 
     .actions-bar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; }
     .pagination { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; }
@@ -177,8 +194,8 @@
       <div>
         <label for="selectOrdenar">Ordenar Por:</label>
         <select id="selectOrdenar" onchange="aplicarFiltros()">
-          <option value="fecha_asc">Fecha Origen (Más Antiguo primero) ⬇️</option>
-          <option value="fecha_desc">Fecha Origen (Más Reciente primero) ⬆️</option>
+          <option value="fecha_asc">Fecha Origen (Más Antiguo) ⬇️</option>
+          <option value="fecha_desc">Fecha Origen (Más Reciente) ⬆️</option>
           <option value="codigo_asc">Código Artículo (A-Z)</option>
           <option value="codigo_desc">Código Artículo (Z-A)</option>
           <option value="mes_asc">Mes Dispensación (Cronológico)</option>
@@ -312,35 +329,29 @@
     function norm(val) {
       if (!val) return '';
       if (normCache[val] !== undefined) return normCache[val];
-      const res = val.toString()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .toLowerCase()
-        .replace(/[^a-z0-9]/g, '');
+      const res = val.toString().toLowerCase().replace(/[^a-z0-9]/g, '');
       normCache[val] = res;
       return res;
     }
 
-    function obtenerValorColumna(row, posiblesNombres) {
-      if (!row) return '';
-      for (let i = 0; i < posiblesNombres.length; i++) {
-        const pNombre = posiblesNombres[i];
-        if (row[pNombre] !== undefined && row[pNombre] !== null && row[pNombre] !== '') {
-          return row[pNombre];
+    function formatearFecha(strFecha) {
+      if (!strFecha) return '';
+      let limpia = strFecha.split(' ')[0].split(',')[0].trim();
+      let partes = limpia.includes('/') ? limpia.split('/') : limpia.split('-');
+      if (partes.length === 3) {
+        let a, m, d;
+        if (partes[0].length === 4) {
+          a = partes[0]; m = partes[1].padStart(2, '0'); d = partes[2].padStart(2, '0');
+        } else {
+          a = partes[2]; m = partes[1].padStart(2, '0'); d = partes[0].padStart(2, '0');
         }
+        return `${a}-${m}-${d}`;
       }
-      const keys = Object.keys(row);
-      for (let i = 0; i < posiblesNombres.length; i++) {
-        const target = norm(posiblesNombres[i]);
-        for (let j = 0; j < keys.length; j++) {
-          if (norm(keys[j]) === target) return row[keys[j]];
-        }
-      }
-      return '';
+      return limpia;
     }
 
     function obtenerMesDeFila(row) {
-      let mesText = obtenerValorColumna(row, ['Mes_Dispensacion', 'Mes Dispensacion', 'Mes Dispensación']);
+      let mesText = obtenerValorColumna(row, ['Mes_Dispensacion', 'Mes Dispensacion', 'Mes Dispensación', 'Mes']);
       if (!mesText) {
         const fechaOrigen = (obtenerValorColumna(row, ['Fecha Origen Dispensacion', 'Fecha Origen']) || '').split(' ')[0];
         if (fechaOrigen) {
@@ -439,11 +450,6 @@
             row['Fecha Subsanación'] = ajuste.fechaSubsanacion || ajuste.fecha || '';
             row['Entrega Efectiva'] = ajuste.fechaEntregaEfectiva || '';
           }
-        } else {
-          if ((row['Estado Final Mennar'] || 'Pendiente Activo') === 'Pendiente Activo') {
-            row['Fecha Subsanación'] = '';
-            row['Entrega Efectiva'] = '';
-          }
         }
       }
     }
@@ -487,7 +493,7 @@
           fila[colNombre] = rowArr[idx] !== undefined ? rowArr[idx] : '';
         });
 
-        const diffOrig = Math.abs(parseFloat(obtenerValorColumna(fila, ['Diferencia', 'Diferencia Real', 'Cant. Pendiente'])) || 0);
+        const diffOrig = Math.abs(parseFloat(obtenerValorColumna(fila, ['Diferencia', 'Diferencia Real', 'Cant. Pendiente', 'Unidades'])) || 0);
         fila['Diferencia'] = Math.abs(Math.round(diffOrig));
         fila['_CantOriginal'] = Math.abs(Math.round(diffOrig));
         
@@ -562,6 +568,18 @@
         row['Inventario BODEGA PENDIENTES NEPS'] = stockBodPendientes;
         row['Inventario BODEGA PRINCIPAL CEDI'] = mCEDI.get(codNorm) || 0;
       }
+    }
+
+    function obtenerValorColumna(row, posiblesNombres) {
+      if (!row) return '';
+      const keys = Object.keys(row);
+      for (let i = 0; i < posiblesNombres.length; i++) {
+        const target = norm(posiblesNombres[i]);
+        for (let j = 0; j < keys.length; j++) {
+          if (norm(keys[j]) === target) return row[keys[j]];
+        }
+      }
+      return '';
     }
 
     function convertirFechaParaOrdenar(strFecha) {
@@ -665,7 +683,7 @@
 
       datosFiltrados = datosPendientes.filter(row => {
         if (busqueda) {
-          const c = obtenerValorColumna(row, ['Cedula Paciente', 'Cedula', 'Cédula Paciente']);
+          const c = obtenerValorColumna(row, ['Cedula Paciente', 'Cedula', 'Cedula Paciente']);
           const n = obtenerValorColumna(row, ['Nombre Paciente', 'Nombre']);
           const d = obtenerValorColumna(row, ['Documento']);
           const a = obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo']);
@@ -675,7 +693,7 @@
 
         if (opcionesMes.length && !opcionesMes.includes(obtenerMesDeFila(row))) return false;
         if (opcionesBodega.length && !opcionesBodega.includes(obtenerValorColumna(row, ['Bodega Encabezado', 'Bodega']))) return false;
-        if (clienteSel && obtenerValorColumna(row, ['Razon Social Cliente', 'Razón Social Cliente', 'Cliente']) !== clienteSel) return false;
+        if (clienteSel && obtenerValorColumna(row, ['Razon Social Cliente', 'Cliente']) !== clienteSel) return false;
 
         const st = parseFloat(row['Inventario Disponible en el punto de origen'] || 0);
         if (inventarioSel === 'con_stock' && st <= 0) return false;
@@ -736,28 +754,27 @@
       paginaDatos.forEach(row => {
         const indexOriginal = datosPendientes.indexOf(row);
         const cantidadPendiente = Math.abs(parseInt(obtenerValorColumna(row, ['Diferencia Real', 'Diferencia', 'Cant. Pendiente'])) || 0);
-        const cuotaRecaudo = obtenerValorColumna(row, ['Cuota Recaudo', 'CuotaRecaudo']) || '0';
+        const cuotaRecaudo = obtenerValorColumna(row, ['Cuota Recaudo']) || '0';
         const estadoFinal = row['Estado Final Mennar'] || 'Pendiente Activo';
-
-        // Extracción directa de las columnas 'Razon Social Cliente' y 'Codigo Contrato'
-        const clienteEPS = row['Razon Social Cliente'] || obtenerValorColumna(row, ['Razon Social Cliente', 'Razón Social Cliente', 'Cliente']);
-        const codigoContrato = row['Codigo Contrato'] || obtenerValorColumna(row, ['Codigo Contrato', 'Código Contrato', 'Contrato']);
 
         let badgeClass = 'badge-pending';
         if (estadoFinal === 'Subsanado') badgeClass = 'badge-done';
         else if (estadoFinal === 'Pendiente Parcial') badgeClass = 'badge-partial';
 
-        let fechaOrigen = (obtenerValorColumna(row, ['Fecha Origen Dispensacion', 'Fecha Origen']) || '').split(' ')[0];
-        let fechaSubsanacion = '-';
-        let entregaEfectiva = '-';
+        let fechaOrigenRaw = obtenerValorColumna(row, ['Fecha Origen Dispensacion', 'Fecha Origen']);
+        let fechaOrigen = formatearFecha(fechaOrigenRaw);
+
+        let fechaSubsanacion = '';
+        let entregaEfectiva = '';
 
         if (estadoFinal !== 'Pendiente Activo') {
-          fechaSubsanacion = row['Fecha Subsanación'] || '-';
-          entregaEfectiva = row['Entrega Efectiva'] || '-';
+          fechaSubsanacion = row['Fecha Subsanación'] || '';
+          entregaEfectiva = row['Entrega Efectiva'] || '';
         }
 
         const stockOrigenNum = parseFloat(row['Inventario Disponible en el punto de origen'] || 0);
         const claseStockOrigen = stockOrigenNum > 0 ? 'stock-rojo' : '';
+
         const mesText = obtenerMesDeFila(row);
 
         const tr = document.createElement('tr');
@@ -766,19 +783,19 @@
           <td>${obtenerValorColumna(row, ['Documento'])}</td>
           <td>${fechaOrigen}</td>
           <td>${obtenerValorColumna(row, ['Bodega Encabezado', 'Bodega'])}</td>
-          <td>${clienteEPS}</td>
-          <td>${obtenerValorColumna(row, ['Cedula Paciente', 'Cedula', 'Cédula Paciente'])}</td>
+          <td>${obtenerValorColumna(row, ['Razon Social Cliente', 'Cliente'])}</td>
+          <td>${obtenerValorColumna(row, ['Cedula Paciente', 'Cedula'])}</td>
           <td>${obtenerValorColumna(row, ['Nombre Paciente', 'Nombre'])}</td>
-          <td>${obtenerValorColumna(row, ['Descripcion', 'Descripción'])}</td>
+          <td class="cell-text">${obtenerValorColumna(row, ['Descripcion', 'Descripción'])}</td>
           <td>${obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo'])}</td>
-          <td>${codigoContrato}</td>
-          <td><strong>${cantidadPendiente}</strong></td>
-          <td>${cuotaRecaudo}</td>
-          <td class="${claseStockOrigen}"><strong>${stockOrigenNum}</strong></td>
-          <td><strong>${row['Inventario BODEGA PENDIENTES NEPS'] || 0}</strong></td>
-          <td><strong>${row['Inventario BODEGA PRINCIPAL CEDI'] || 0}</strong></td>
-          <td><strong>${fechaSubsanacion}</strong></td>
-          <td><strong>${entregaEfectiva}</strong></td>
+          <td>${obtenerValorColumna(row, ['Codigo Contrato', 'Contrato'])}</td>
+          <td class="text-center"><strong>${cantidadPendiente}</strong></td>
+          <td class="text-center">${cuotaRecaudo}</td>
+          <td class="text-center ${claseStockOrigen}"><strong>${stockOrigenNum}</strong></td>
+          <td class="text-center"><strong>${row['Inventario BODEGA PENDIENTES NEPS'] || 0}</strong></td>
+          <td class="text-center"><strong>${row['Inventario BODEGA PRINCIPAL CEDI'] || 0}</strong></td>
+          <td class="text-center">${fechaSubsanacion}</td>
+          <td class="text-center">${entregaEfectiva}</td>
           <td><span class="badge ${badgeClass}">${estadoFinal}</span></td>
           <td><button class="btn-subsanar" onclick="subsanar(${indexOriginal})">${estadoFinal.includes('Pendiente') ? 'Subsanar' : 'Ajustar'}</button></td>
         `;
@@ -801,7 +818,7 @@
 
       const meses = [...new Set(datosPendientes.map(i => obtenerMesDeFila(i)).filter(Boolean))].sort((a, b) => (ORDEN_MESES[a.toLowerCase()] || 99) - (ORDEN_MESES[b.toLowerCase()] || 99));
       const bodegas = [...new Set(datosPendientes.map(i => obtenerValorColumna(i, ['Bodega Encabezado', 'Bodega'])).filter(Boolean))].sort();
-      const clientes = [...new Set(datosPendientes.map(i => i['Razon Social Cliente'] || obtenerValorColumna(i, ['Razon Social Cliente', 'Razón Social Cliente', 'Cliente'])).filter(Boolean))].sort();
+      const clientes = [...new Set(datosPendientes.map(i => obtenerValorColumna(i, ['Razon Social Cliente', 'Cliente'])).filter(Boolean))].sort();
 
       sMes.innerHTML = meses.map(m => `<option value="${m}">${m}</option>`).join('');
       sBod.innerHTML = bodegas.map(b => `<option value="${b}">${b}</option>`).join('');
@@ -850,9 +867,9 @@
 
       let diagnosticoCobertura = "";
       if (stockDisponible >= sumaTotalPendientesPunto) {
-        diagnosticoCobertura = `✅ CUBRES LA TOTALIDAD (${sumaTotalPendientesPunto} un.). Tu stock de ${stockDisponible} un. alcanza para pagar TODAS las ${totalDispensasCount} dispensas pendientes.`;
+        diagnosticoCobertura = `✅ CUBRES LA TOTALIDAD (${sumaTotalPendientesPunto} un.). Tu stock de ${stockDisponible} un. alcanza para pagar TODAS las ${totalDispensasCount} dispensas pendientes de este código en este punto.`;
       } else if (stockDisponible > 0) {
-        diagnosticoCobertura = `⚠️ COBERTURA PARCIAL. Tienes ${totalDispensasCount} dispensas (${sumaTotalPendientesPunto} un.) y stock de ${stockDisponible} un. Alcanza para ${dispensasCubiertas} dispensas.`;
+        diagnosticoCobertura = `⚠️ COBERTURA PARCIAL. Como tienes ${totalDispensasCount} dispensas que te suman ${sumaTotalPendientesPunto} un. y tu inventario es de ${stockDisponible} un., debes pagar ${dispensasCubiertas} dispensas completas.`;
       } else {
         diagnosticoCobertura = `❌ SIN STOCK. Tu inventario es 0 un. No puedes cubrir las ${totalDispensasCount} dispensas pendientes (${sumaTotalPendientesPunto} un. requeridas).`;
       }
@@ -895,7 +912,7 @@
         }
 
         const fechaPrev = item['Entrega Efectiva'] || '';
-        let inputFecha = prompt(`[OPCIONAL] Ingrese Fecha de Entrega Efectiva (AAAA-MM-DD):\nDejar en blanco si aplica:`, fechaPrev);
+        let inputFecha = prompt(`[OPCIONAL] Ingrese Fecha de Entrega Efectiva (AAAA-MM-DD).\nO pulse Aceptar/Enter para dejar en blanco:`, fechaPrev);
         
         let fechaEfectiva = "";
         if (inputFecha !== null && inputFecha.trim() !== "") {
@@ -903,7 +920,7 @@
           if (!isNaN(fechaParsed)) {
             fechaEfectiva = inputFecha.trim();
           } else {
-            alert('Formato de fecha no válido.');
+            alert('Formato de fecha no reconocido. Se dejará la fecha de entrega en blanco.');
           }
         }
 
@@ -919,7 +936,7 @@
         item['Entrega Efectiva'] = fechaEfectiva;
 
         const mesCalculado = obtenerMesDeFila(item);
-        const clienteVal = item['Razon Social Cliente'] || obtenerValorColumna(item, ['Razon Social Cliente', 'Razón Social Cliente', 'Cliente']);
+        const clienteVal = obtenerValorColumna(item, ['Razon Social Cliente', 'Cliente']);
 
         const payload = {
           idUnico, doc,
@@ -927,17 +944,18 @@
           cliente: clienteVal,
           bodega: bodegaPunto,
           siglaCliente: obtenerValorColumna(item, ['Sigla Comercial Cliente']),
-          cedula: obtenerValorColumna(item, ['Cedula Paciente', 'Cedula', 'Cédula Paciente']),
+          cedula: obtenerValorColumna(item, ['Cedula Paciente']),
           paciente: obtenerValorColumna(item, ['Nombre Paciente']),
           medicamento: descripcion, 
           codArt: codigoArt,
-          codContrato: item['Codigo Contrato'] || obtenerValorColumna(item, ['Codigo Contrato', 'Código Contrato', 'Contrato']),
+          codContrato: obtenerValorColumna(item, ['Codigo Contrato', 'Contrato']),
           cantEntregada: cantidadIngresada,
-          cuotaRecaudo: obtenerValorColumna(item, ['Cuota Recaudo', 'CuotaRecaudo']) || '0',
+          cuotaRecaudo: obtenerValorColumna(item, ['Cuota Recaudo']) || '0',
           fechaSubsanacion: fechaRegistroSys,
           fechaEntregaEfectiva: fechaEfectiva,
           est: estadoFinal, 
           accion: 'guardar',
+          
           generadoPor: 'Sistema_App',
           actualizadoPor: 'Sistema_App',
           tipoDispensa: obtenerValorColumna(item, ['Tipo Servicio']) || 'POS',
@@ -975,7 +993,7 @@
       
       dataset.forEach(row => {
         const filaFormateada = COLUMNAS_SOLICITADAS.map(col => {
-          let val = row[col] !== undefined ? row[col] : obtenerValorColumna(row, [col]);
+          let val = obtenerValorColumna(row, [col]);
           
           if (col === 'Inventario Disponible en el punto de origen') val = row['Inventario Disponible en el punto de origen'] || 0;
           if (col === 'Inventario BODEGA PENDIENTES NEPS') val = row['Inventario BODEGA PENDIENTES NEPS'] || 0;
