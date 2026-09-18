@@ -146,7 +146,7 @@
   <div class="card">
     <div class="grid-files">
       <div>
-        <label for="csvFileInput">1. Cargar Archivo de Pendientes (CSV / Excel):</label>
+        <label for="csvFileInput">1. Cargar Archivo de Pendientes (DetalladoDispensacion3 / CSV / Excel):</label>
         <div style="display: flex; gap: 6px;">
           <input type="file" id="csvFileInput" accept=".csv, .xlsx, .xls, .txt" onclick="this.value=null;" />
           <button class="btn-primary" style="width: auto; padding: 0 10px;" onclick="cargarArchivoManualmente()">Procesar</button>
@@ -162,7 +162,7 @@
     </div>
     
     <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px;">
-      <button class="btn-success" style="width: auto; font-size: 11px; padding: 0 10px; height: 26px;" onclick="exportarCSV(false)">⬇️ Exportar CSV Completo</button>
+      <button class="btn-success" style="width: auto; font-size: 11px; padding: 0 10px; height: 26px;" onclick="exportarCSV(false)">⬇️ Exportar CSV Completo (32 Campos Solicitados)</button>
       <button class="btn-danger" style="width: auto; font-size: 11px; padding: 0 10px; height: 26px;" onclick="limpiarDatos()">🗑️ Restablecer / Borrar Datos</button>
     </div>
   </div>
@@ -240,7 +240,7 @@
         <h3 style="margin: 0; font-size: 13px;">Registros</h3>
         <button class="btn-filter-export" onclick="exportarCSV(true)">📥 Descargar Filtro Actual (CSV/Excel)</button>
       </div>
-      <div class="stats" id="infoContador">Seleccione los archivos a cargar...</div>
+      <div class="stats" id="infoContador">Inicializando...</div>
     </div>
     
     <div class="table-container">
@@ -283,45 +283,44 @@
     const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxHzhqkIySVU1v-QFZnJjPoXVW83pg40X7orwR5d96qs3DWyEBfe3Wl9mwAsnE9AMIr/exec';
     const CHANGES_KEY = 'app_pendientes_subsanaciones';
 
-    // Mapeo flexible para exportar la totalidad de campos
-    const MAPEO_COLUMNAS = {
-      'Tipo Comprobante': ['Tipo Comprobante', 'TipoComprobante', 'Tipo Comprobante '],
-      'Documento': ['Documento', 'Num Documento', 'Nro Documento'],
-      'Fecha Origen Dispensacion': ['Fecha Origen Dispensacion', 'Fecha Origen Dispensación', 'Fecha Origen', 'FechaDispensacion'],
-      'Razon Social Cliente': ['Razon Social Cliente', 'Razón Social Cliente', 'Cliente'],
-      'Sigla Comercial Cliente': ['Sigla Comercial Cliente', 'Sigla Cliente'],
-      'Cedula Paciente': ['Cedula Paciente', 'Cédula Paciente', 'Cedula', 'Cédula'],
-      'Nombre Paciente': ['Nombre Paciente', 'Paciente', 'Nombre'],
-      'Edad paciente': ['Edad paciente', 'Edad Paciente', 'Edad'],
-      'Bodega Encabezado': ['Bodega Encabezado', 'Bodega', 'Punto'],
-      'Tipo Servicio': ['Tipo Servicio', 'Servicio'],
-      'DOMICILIO': ['DOMICILIO', 'Domicilio'],
-      'CODIGO CIE 10': ['CODIGO CIE 10', 'Codigo CIE 10', 'CIE10', 'CIE 10'],
-      'DESCRIPCION CIE 10': ['DESCRIPCION CIE 10', 'Descripción CIE 10', 'Diagnostico', 'Diagnóstico'],
-      'COHORTE': ['COHORTE', 'Cohorte'],
-      'Contrato': ['Contrato'],
-      'Codigo Articulo': ['Codigo Articulo', 'Código Artículo', 'Codigo Art', 'CodigoArticulo'],
-      'Descripcion': ['Descripcion', 'Descripción', 'Medicamento', 'Producto'],
-      'Presentacion': ['Presentacion', 'Presentación'],
-      'Grupo': ['Grupo'],
-      'Unidades': ['Unidades'],
-      'Cantidad Autorizada': ['Cantidad Autorizada', 'Cant Autorizada'],
-      'Cantidad Prescrita': ['Cantidad Prescrita', 'Cant Prescrita'],
-      'Diferencia': ['Diferencia', 'Diferencia Real', 'Cant Pendiente', 'Cantidad Pendiente'],
-      'Municipio Tipo Comprobante': ['Municipio Tipo Comprobante', 'Municipio'],
-      'Usuario Creacion': ['Usuario Creacion', 'Usuario Creación', 'Usuario'],
-      'Codigo Contrato': ['Codigo Contrato', 'Código Contrato', 'Cod Contrato'],
-      'Cuota Recaudo': ['Cuota Recaudo', 'CuotaRecaudo', 'Recaudo'],
-      'Inventario Disponible en el punto de origen': ['Inventario Disponible en el punto de origen', 'Inv Origen'],
-      'Inventario BODEGA PENDIENTES NEPS': ['Inventario BODEGA PENDIENTES NEPS', 'Inv Pendientes NEPS'],
-      'Inventario BODEGA PRINCIPAL CEDI': ['Inventario BODEGA PRINCIPAL CEDI', 'Inv CEDI'],
-      'Fecha Subsanación': ['Fecha Subsanación', 'Fecha Subsanacion'],
-      'Entrega Efectiva': ['Entrega Efectiva']
-    };
+    // Lista estricta de las 32 columnas solicitadas para la descarga
+    const COLUMNAS_SOLICITADAS = [
+      'Tipo Comprobante',
+      'Documento',
+      'Fecha Origen Dispensacion',
+      'Razon Social Cliente',
+      'Sigla Comercial Cliente',
+      'Cedula Paciente',
+      'Nombre Paciente',
+      'Edad paciente',
+      'Bodega Encabezado',
+      'Tipo Servicio',
+      'DOMICILIO',
+      'CODIGO CIE 10',
+      'DESCRIPCION CIE 10',
+      'COHORTE',
+      'Contrato',
+      'Codigo Articulo',
+      'Descripcion',
+      'Presentacion',
+      'Grupo',
+      'Unidades',
+      'Cantidad Autorizada',
+      'Cantidad Prescrita',
+      'Diferencia',
+      'Municipio Tipo Comprobante',
+      'Usuario Creacion',
+      'Codigo Contrato',
+      'Cuota Recaudo',
+      'Inventario Disponible en el punto de origen',
+      'Inventario BODEGA PENDIENTES NEPS',
+      'Inventario BODEGA PRINCIPAL CEDI',
+      'Fecha Subsanación',
+      'Entrega Efectiva'
+    ];
 
     let datosPendientes = [];
     let datosFiltrados = [];
-    let cabecerasGuardadas = [];
     let paginaActual = 1;
     const registrosPorPagina = 100;
     let timerDebounce = null;
@@ -338,33 +337,19 @@
     function norm(val) {
       if (!val) return '';
       if (normCache[val] !== undefined) return normCache[val];
-      const res = val.toString().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, '');
+      const res = val.toString().toLowerCase().replace(/[^a-z0-9]/g, '');
       normCache[val] = res;
       return res;
     }
 
-    function obtenerValorColumna(row, posiblesNombres) {
-      if (!row) return '';
-      const keys = Object.keys(row);
-      for (let i = 0; i < posiblesNombres.length; i++) {
-        const target = norm(posiblesNombres[i]);
-        for (let j = 0; j < keys.length; j++) {
-          if (norm(keys[j]) === target && row[keys[j]] !== undefined && row[keys[j]] !== null) {
-            return row[keys[j]];
-          }
-        }
-      }
-      return '';
-    }
-
     function obtenerMesDeFila(row) {
-      let mesText = obtenerValorColumna(row, ['Mes_Dispensacion', 'Mes Dispensacion', 'Mes Dispensación', 'Mes']);
+      let mesText = obtenerValorColumna(row, ['Mes_Dispensacion', 'Mes Dispensacion', 'Mes Dispensación']);
       if (!mesText) {
         const fechaOrigen = (obtenerValorColumna(row, ['Fecha Origen Dispensacion', 'Fecha Origen']) || '').split(' ')[0];
         if (fechaOrigen) {
-          const partes = fechaOrigen.includes('/') ? fechaOrigen.split('/') : fechaOrigen.split('-');
+          const partes = fechaOrigen.split('/');
           if (partes.length === 3) {
-            let mIdx = parseInt(partes[1]) - 1;
+            const mIdx = parseInt(partes[1]) - 1;
             const nombresMeses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
             mesText = nombresMeses[mIdx] || '';
           }
@@ -378,31 +363,29 @@
     });
 
     async function cargarArchivosAutomaticos() {
+      document.getElementById('infoContador').textContent = 'Sincronizando reportes e inventario...';
       try {
         const timestamp = '?v=' + Date.now();
         const respPend = await fetch('./' + encodeURIComponent(ARCHIVO_PENDIENTES) + timestamp);
         if (respPend.ok) {
-          document.getElementById('infoContador').textContent = 'Sincronizando reportes e inventario...';
           const textoPend = await respPend.text();
           parsearMatrizDirecta(convertirTextoAMatriz(textoPend));
-          
-          try {
-            const respInv = await fetch('./' + encodeURIComponent(ARCHIVO_INVENTARIO) + timestamp);
-            if (respInv.ok) {
-              const textoInv = await respInv.text();
-              procesarMatrizInventarioFast(convertirTextoAMatriz(textoInv));
-            }
-          } catch (e) { console.warn('Sin archivo de inventario por defecto.'); }
-
-          reaplicarSubsanacionesLocal();
-          sincronizarDesdeNubeSilencioso();
-          poblarSelectoresFiltro();
-          aplicarFiltros();
-        } else {
-          document.getElementById('infoContador').textContent = 'Por favor seleccione los archivos para iniciar.';
         }
+
+        try {
+          const respInv = await fetch('./' + encodeURIComponent(ARCHIVO_INVENTARIO) + timestamp);
+          if (respInv.ok) {
+            const textoInv = await respInv.text();
+            procesarMatrizInventarioFast(convertirTextoAMatriz(textoInv));
+          }
+        } catch (e) { console.warn('Inventario secundario no detectado.'); }
+
+        reaplicarSubsanacionesLocal();
+        sincronizarDesdeNubeSilencioso();
+        poblarSelectoresFiltro();
+        aplicarFiltros();
       } catch (err) {
-        document.getElementById('infoContador').textContent = 'Por favor cargue los archivos manualmente.';
+        document.getElementById('infoContador').textContent = 'Cargue archivos manualmente.';
       }
     }
 
@@ -459,6 +442,11 @@
             row['Fecha Subsanación'] = ajuste.fechaSubsanacion || ajuste.fecha || '';
             row['Entrega Efectiva'] = ajuste.fechaEntregaEfectiva || '';
           }
+        } else {
+          if ((row['Estado Final Mennar'] || 'Pendiente Activo') === 'Pendiente Activo') {
+            row['Fecha Subsanación'] = '';
+            row['Entrega Efectiva'] = '';
+          }
         }
       }
     }
@@ -471,12 +459,9 @@
     }
 
     function convertirTextoAMatriz(texto) {
-      if (!texto) return [];
-      const limpia = texto.replace(/^\uFEFF/, '');
-      const lineas = limpia.split(/\r?\n/);
+      const lineas = texto.split(/\r?\n/);
       if (!lineas.length) return [];
-
-      let sep = limpia.includes(';') ? ';' : (limpia.includes('|') ? '|' : ',');
+      let sep = texto.includes('|') ? '|' : (texto.includes(';') ? ';' : ',');
       return lineas.map(linea => linea.split(sep).map(v => v.trim().replace(/^"|"$/g, '')));
     }
 
@@ -492,7 +477,7 @@
         }
       }
 
-      cabecerasGuardadas = matriz[headerIdx].map(c => c.trim()).filter(Boolean);
+      const cabecerasOriginales = matriz[headerIdx].map(c => c.trim()).filter(Boolean);
       datosPendientes = [];
 
       for (let i = headerIdx + 1; i < matriz.length; i++) {
@@ -501,11 +486,11 @@
         
         const fila = {};
         
-        cabecerasGuardadas.forEach((colNombre, idx) => {
+        cabecerasOriginales.forEach((colNombre, idx) => {
           fila[colNombre] = rowArr[idx] !== undefined ? rowArr[idx] : '';
         });
 
-        const diffOrig = Math.abs(parseFloat(obtenerValorColumna(fila, ['Diferencia', 'Diferencia Real', 'Cant. Pendiente', 'Cantidad Prescrita'])) || 0);
+        const diffOrig = Math.abs(parseFloat(obtenerValorColumna(fila, ['Diferencia', 'Diferencia Real', 'Cant. Pendiente'])) || 0);
         fila['Diferencia'] = Math.abs(Math.round(diffOrig));
         fila['_CantOriginal'] = Math.abs(Math.round(diffOrig));
         
@@ -582,6 +567,18 @@
       }
     }
 
+    function obtenerValorColumna(row, posiblesNombres) {
+      if (!row) return '';
+      const keys = Object.keys(row);
+      for (let i = 0; i < posiblesNombres.length; i++) {
+        const target = norm(posiblesNombres[i]);
+        for (let j = 0; j < keys.length; j++) {
+          if (norm(keys[j]) === target) return row[keys[j]];
+        }
+      }
+      return '';
+    }
+
     function convertirFechaParaOrdenar(strFecha) {
       if (!strFecha) return 0;
       let limpia = strFecha.split(' ')[0].split(',')[0].trim();
@@ -596,7 +593,7 @@
     function cargarArchivoManualmente() {
       const input = document.getElementById('csvFileInput');
       const file = input.files[0];
-      if (!file) return alert('Selecciona el archivo de pendientes primero.');
+      if (!file) return;
 
       document.getElementById('infoContador').textContent = 'Procesando archivo...';
       const reader = new FileReader();
@@ -630,7 +627,7 @@
       if (!file) return alert('Por favor selecciona un archivo de inventario.');
       if (!datosPendientes.length) return alert('Carga primero el archivo de Pendientes.');
 
-      document.getElementById('infoContador').textContent = 'Cruzando Inventario...';
+      document.getElementById('infoContador').textContent = 'Cruzando Inventario en milisegundos...';
       const reader = new FileReader();
 
       if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
@@ -693,7 +690,7 @@
 
         if (opcionesMes.length && !opcionesMes.includes(obtenerMesDeFila(row))) return false;
         if (opcionesBodega.length && !opcionesBodega.includes(obtenerValorColumna(row, ['Bodega Encabezado', 'Bodega']))) return false;
-        if (clienteSel && obtenerValorColumna(row, ['Razon Social Cliente', 'Cliente']) !== clienteSel) return false;
+        if (clienteSel && obtenerValorColumna(row, ['Razon Social Cliente', 'Sigla Comercial Cliente', 'Cliente']) !== clienteSel) return false;
 
         const st = parseFloat(row['Inventario Disponible en el punto de origen'] || 0);
         if (inventarioSel === 'con_stock' && st <= 0) return false;
@@ -784,12 +781,12 @@
           <td>${obtenerValorColumna(row, ['Documento'])}</td>
           <td>${fechaOrigen}</td>
           <td>${obtenerValorColumna(row, ['Bodega Encabezado', 'Bodega'])}</td>
-          <td>${obtenerValorColumna(row, ['Razon Social Cliente', 'Cliente'])}</td>
+          <td>${obtenerValorColumna(row, ['Razon Social Cliente', 'Sigla Comercial Cliente', 'Cliente'])}</td>
           <td>${obtenerValorColumna(row, ['Cedula Paciente', 'Cedula'])}</td>
           <td>${obtenerValorColumna(row, ['Nombre Paciente', 'Nombre'])}</td>
           <td>${obtenerValorColumna(row, ['Descripcion', 'Descripción'])}</td>
           <td>${obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo'])}</td>
-          <td>${obtenerValorColumna(row, ['Codigo Contrato', 'Contrato'])}</td>
+          <td>${obtenerValorColumna(row, ['Codigo Contrato', 'CodigoContrato', 'Contrato'])}</td>
           <td><strong>${cantidadPendiente}</strong></td>
           <td>${cuotaRecaudo}</td>
           <td class="${claseStockOrigen}"><strong>${stockOrigenNum}</strong></td>
@@ -819,7 +816,7 @@
 
       const meses = [...new Set(datosPendientes.map(i => obtenerMesDeFila(i)).filter(Boolean))].sort((a, b) => (ORDEN_MESES[a.toLowerCase()] || 99) - (ORDEN_MESES[b.toLowerCase()] || 99));
       const bodegas = [...new Set(datosPendientes.map(i => obtenerValorColumna(i, ['Bodega Encabezado', 'Bodega'])).filter(Boolean))].sort();
-      const clientes = [...new Set(datosPendientes.map(i => obtenerValorColumna(i, ['Razon Social Cliente', 'Cliente'])).filter(Boolean))].sort();
+      const clientes = [...new Set(datosPendientes.map(i => obtenerValorColumna(i, ['Razon Social Cliente', 'Sigla Comercial Cliente', 'Cliente'])).filter(Boolean))].sort();
 
       sMes.innerHTML = meses.map(m => `<option value="${m}">${m}</option>`).join('');
       sBod.innerHTML = bodegas.map(b => `<option value="${b}">${b}</option>`).join('');
@@ -937,7 +934,7 @@
         item['Entrega Efectiva'] = fechaEfectiva;
 
         const mesCalculado = obtenerMesDeFila(item);
-        const clienteVal = obtenerValorColumna(item, ['Razon Social Cliente', 'Cliente']);
+        const clienteVal = obtenerValorColumna(item, ['Razon Social Cliente', 'Sigla Comercial Cliente', 'Cliente']);
 
         const payload = {
           idUnico, doc,
@@ -949,13 +946,23 @@
           paciente: obtenerValorColumna(item, ['Nombre Paciente']),
           medicamento: descripcion, 
           codArt: codigoArt,
-          codContrato: obtenerValorColumna(item, ['Codigo Contrato', 'Contrato']),
+          codContrato: obtenerValorColumna(item, ['Codigo Contrato', 'CodigoContrato', 'Contrato']),
           cantEntregada: cantidadIngresada,
           cuotaRecaudo: obtenerValorColumna(item, ['Cuota Recaudo']) || '0',
           fechaSubsanacion: fechaRegistroSys,
           fechaEntregaEfectiva: fechaEfectiva,
           est: estadoFinal, 
-          accion: 'guardar'
+          accion: 'guardar',
+          
+          generadoPor: 'Sistema_App',
+          actualizadoPor: 'Sistema_App',
+          tipoDispensa: obtenerValorColumna(item, ['Tipo Servicio']) || 'POS',
+          presentacion: obtenerValorColumna(item, ['Presentacion']),
+          grupo: obtenerValorColumna(item, ['Grupo']),
+          cie10: obtenerValorColumna(item, ['DESCRIPCION CIE 10', 'CODIGO CIE 10']),
+          cohorte: obtenerValorColumna(item, ['COHORTE']),
+          tipoContrato: obtenerValorColumna(item, ['Contrato']),
+          prefijoSede: doc.substring(0, 3)
         };
 
         cambiosExistentes[idUnico] = payload;
@@ -980,38 +987,20 @@
       const dataset = soloFiltrados ? datosFiltrados : datosPendientes;
       if (!dataset.length) return alert('No hay datos para exportar.');
 
-      // Si tenemos cabeceras dinámicas del archivo cargado, las usamos garantizando exportación exacta
-      let columnasAExportar = cabecerasGuardadas.length > 0 ? [...cabecerasGuardadas] : Object.keys(MAPEO_COLUMNAS);
-
-      // Aseguramos que las columnas de resultado calculado estén presentes al final si no venían
-      const extraCols = [
-        'Inventario Disponible en el punto de origen',
-        'Inventario BODEGA PENDIENTES NEPS',
-        'Inventario BODEGA PRINCIPAL CEDI',
-        'Fecha Subsanación',
-        'Entrega Efectiva'
-      ];
-
-      extraCols.forEach(col => {
-        if (!columnasAExportar.some(c => norm(c) === norm(col))) {
-          columnasAExportar.push(col);
-        }
-      });
-
-      let csvText = columnasAExportar.join(';') + '\n';
+      // Encabezado estricto con las 32 columnas solicitadas
+      let csvText = COLUMNAS_SOLICITADAS.join(';') + '\n';
       
       dataset.forEach(row => {
-        const filaFormateada = columnasAExportar.map(col => {
-          let val = '';
-          if (MAPEO_COLUMNAS[col]) {
-            val = obtenerValorColumna(row, MAPEO_COLUMNAS[col]);
-          } else {
-            val = row[col] !== undefined ? row[col] : obtenerValorColumna(row, [col]);
-          }
-
-          if (val === '' || val === undefined || val === null) {
-            val = row[col] !== undefined ? row[col] : '';
-          }
+        const filaFormateada = COLUMNAS_SOLICITADAS.map(col => {
+          let val = obtenerValorColumna(row, [col]);
+          
+          // Mapeo directo para campos calculados
+          if (col === 'Inventario Disponible en el punto de origen') val = row['Inventario Disponible en el punto de origen'] || 0;
+          if (col === 'Inventario BODEGA PENDIENTES NEPS') val = row['Inventario BODEGA PENDIENTES NEPS'] || 0;
+          if (col === 'Inventario BODEGA PRINCIPAL CEDI') val = row['Inventario BODEGA PRINCIPAL CEDI'] || 0;
+          if (col === 'Fecha Subsanación') val = row['Fecha Subsanación'] || '';
+          if (col === 'Entrega Efectiva') val = row['Entrega Efectiva'] || '';
+          if (col === 'Diferencia') val = row['Diferencia'] !== undefined ? row['Diferencia'] : obtenerValorColumna(row, ['Diferencia Real']);
 
           return `"${(val !== undefined && val !== null ? val : '').toString().replace(/"/g, '""')}"`;
         });
@@ -1021,7 +1010,7 @@
       const blob = new Blob(['\uFEFF' + csvText], { type: 'text/csv;charset=utf-8;' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = `Reporte_Subsanaciones_${Date.now()}.csv`;
+      a.download = `Total_Dispensacion_Pendientes_32_Campos_${Date.now()}.csv`;
       a.click();
     }
 
