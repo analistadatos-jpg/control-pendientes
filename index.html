@@ -323,6 +323,12 @@
 
     function obtenerValorColumna(row, posiblesNombres) {
       if (!row) return '';
+      for (let i = 0; i < posiblesNombres.length; i++) {
+        const pNombre = posiblesNombres[i];
+        if (row[pNombre] !== undefined && row[pNombre] !== null && row[pNombre] !== '') {
+          return row[pNombre];
+        }
+      }
       const keys = Object.keys(row);
       for (let i = 0; i < posiblesNombres.length; i++) {
         const target = norm(posiblesNombres[i]);
@@ -659,7 +665,7 @@
 
       datosFiltrados = datosPendientes.filter(row => {
         if (busqueda) {
-          const c = obtenerValorColumna(row, ['Cedula Paciente', 'Cedula']);
+          const c = obtenerValorColumna(row, ['Cedula Paciente', 'Cedula', 'Cédula Paciente']);
           const n = obtenerValorColumna(row, ['Nombre Paciente', 'Nombre']);
           const d = obtenerValorColumna(row, ['Documento']);
           const a = obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo']);
@@ -669,7 +675,7 @@
 
         if (opcionesMes.length && !opcionesMes.includes(obtenerMesDeFila(row))) return false;
         if (opcionesBodega.length && !opcionesBodega.includes(obtenerValorColumna(row, ['Bodega Encabezado', 'Bodega']))) return false;
-        if (clienteSel && obtenerValorColumna(row, ['Razon Social Cliente', 'Cliente', 'Razón Social Cliente']) !== clienteSel) return false;
+        if (clienteSel && obtenerValorColumna(row, ['Razon Social Cliente', 'Razón Social Cliente', 'Cliente']) !== clienteSel) return false;
 
         const st = parseFloat(row['Inventario Disponible en el punto de origen'] || 0);
         if (inventarioSel === 'con_stock' && st <= 0) return false;
@@ -733,8 +739,9 @@
         const cuotaRecaudo = obtenerValorColumna(row, ['Cuota Recaudo', 'CuotaRecaudo']) || '0';
         const estadoFinal = row['Estado Final Mennar'] || 'Pendiente Activo';
 
-        const clienteEPS = obtenerValorColumna(row, ['Razon Social Cliente', 'Razón Social Cliente', 'Cliente', 'Sigla Comercial Cliente']);
-        const codigoContrato = obtenerValorColumna(row, ['Codigo Contrato', 'Código Contrato', 'Contrato']);
+        // Extracción directa de las columnas 'Razon Social Cliente' y 'Codigo Contrato'
+        const clienteEPS = row['Razon Social Cliente'] || obtenerValorColumna(row, ['Razon Social Cliente', 'Razón Social Cliente', 'Cliente']);
+        const codigoContrato = row['Codigo Contrato'] || obtenerValorColumna(row, ['Codigo Contrato', 'Código Contrato', 'Contrato']);
 
         let badgeClass = 'badge-pending';
         if (estadoFinal === 'Subsanado') badgeClass = 'badge-done';
@@ -794,7 +801,7 @@
 
       const meses = [...new Set(datosPendientes.map(i => obtenerMesDeFila(i)).filter(Boolean))].sort((a, b) => (ORDEN_MESES[a.toLowerCase()] || 99) - (ORDEN_MESES[b.toLowerCase()] || 99));
       const bodegas = [...new Set(datosPendientes.map(i => obtenerValorColumna(i, ['Bodega Encabezado', 'Bodega'])).filter(Boolean))].sort();
-      const clientes = [...new Set(datosPendientes.map(i => obtenerValorColumna(i, ['Razon Social Cliente', 'Razón Social Cliente', 'Cliente'])).filter(Boolean))].sort();
+      const clientes = [...new Set(datosPendientes.map(i => i['Razon Social Cliente'] || obtenerValorColumna(i, ['Razon Social Cliente', 'Razón Social Cliente', 'Cliente'])).filter(Boolean))].sort();
 
       sMes.innerHTML = meses.map(m => `<option value="${m}">${m}</option>`).join('');
       sBod.innerHTML = bodegas.map(b => `<option value="${b}">${b}</option>`).join('');
@@ -912,7 +919,7 @@
         item['Entrega Efectiva'] = fechaEfectiva;
 
         const mesCalculado = obtenerMesDeFila(item);
-        const clienteVal = obtenerValorColumna(item, ['Razon Social Cliente', 'Razón Social Cliente', 'Cliente']);
+        const clienteVal = item['Razon Social Cliente'] || obtenerValorColumna(item, ['Razon Social Cliente', 'Razón Social Cliente', 'Cliente']);
 
         const payload = {
           idUnico, doc,
@@ -924,7 +931,7 @@
           paciente: obtenerValorColumna(item, ['Nombre Paciente']),
           medicamento: descripcion, 
           codArt: codigoArt,
-          codContrato: obtenerValorColumna(item, ['Codigo Contrato', 'Código Contrato', 'Contrato']),
+          codContrato: item['Codigo Contrato'] || obtenerValorColumna(item, ['Codigo Contrato', 'Código Contrato', 'Contrato']),
           cantEntregada: cantidadIngresada,
           cuotaRecaudo: obtenerValorColumna(item, ['Cuota Recaudo', 'CuotaRecaudo']) || '0',
           fechaSubsanacion: fechaRegistroSys,
@@ -968,7 +975,7 @@
       
       dataset.forEach(row => {
         const filaFormateada = COLUMNAS_SOLICITADAS.map(col => {
-          let val = obtenerValorColumna(row, [col]);
+          let val = row[col] !== undefined ? row[col] : obtenerValorColumna(row, [col]);
           
           if (col === 'Inventario Disponible en el punto de origen') val = row['Inventario Disponible en el punto de origen'] || 0;
           if (col === 'Inventario BODEGA PENDIENTES NEPS') val = row['Inventario BODEGA PENDIENTES NEPS'] || 0;
