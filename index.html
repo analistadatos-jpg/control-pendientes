@@ -283,7 +283,9 @@
     const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxHzhqkIySVU1v-QFZnJjPoXVW83pg40X7orwR5d96qs3DWyEBfe3Wl9mwAsnE9AMIr/exec';
     const CHANGES_KEY = 'app_pendientes_subsanaciones';
 
-    // Lista estricta de las 32 columnas solicitadas para la descarga
+    const COLUMNAS_CLIENTE = ['Razon Social Cliente', 'Sigla Comercial Cliente', 'Cliente', 'EPS', 'Razon Social', 'Nombre Cliente', 'Eps / Cliente'];
+    const COLUMNAS_CONTRATO = ['Codigo Contrato', 'CodigoContrato', 'Contrato', 'Cod Contrato', 'No Contrato', 'Código Contrato'];
+
     const COLUMNAS_SOLICITADAS = [
       'Tipo Comprobante',
       'Documento',
@@ -343,7 +345,7 @@
     }
 
     function obtenerMesDeFila(row) {
-      let mesText = obtenerValorColumna(row, ['Mes_Dispensacion', 'Mes Dispensacion', 'Mes Dispensación']);
+      let mesText = obtenerValorColumna(row, ['Mes_Dispensacion', 'Mes Dispensacion', 'Mes Dispensación', 'Mes']);
       if (!mesText) {
         const fechaOrigen = (obtenerValorColumna(row, ['Fecha Origen Dispensacion', 'Fecha Origen']) || '').split(' ')[0];
         if (fechaOrigen) {
@@ -690,7 +692,7 @@
 
         if (opcionesMes.length && !opcionesMes.includes(obtenerMesDeFila(row))) return false;
         if (opcionesBodega.length && !opcionesBodega.includes(obtenerValorColumna(row, ['Bodega Encabezado', 'Bodega']))) return false;
-        if (clienteSel && obtenerValorColumna(row, ['Razon Social Cliente', 'Sigla Comercial Cliente', 'Cliente']) !== clienteSel) return false;
+        if (clienteSel && obtenerValorColumna(row, COLUMNAS_CLIENTE) !== clienteSel) return false;
 
         const st = parseFloat(row['Inventario Disponible en el punto de origen'] || 0);
         if (inventarioSel === 'con_stock' && st <= 0) return false;
@@ -781,12 +783,12 @@
           <td>${obtenerValorColumna(row, ['Documento'])}</td>
           <td>${fechaOrigen}</td>
           <td>${obtenerValorColumna(row, ['Bodega Encabezado', 'Bodega'])}</td>
-          <td>${obtenerValorColumna(row, ['Razon Social Cliente', 'Sigla Comercial Cliente', 'Cliente'])}</td>
+          <td>${obtenerValorColumna(row, COLUMNAS_CLIENTE)}</td>
           <td>${obtenerValorColumna(row, ['Cedula Paciente', 'Cedula'])}</td>
           <td>${obtenerValorColumna(row, ['Nombre Paciente', 'Nombre'])}</td>
           <td>${obtenerValorColumna(row, ['Descripcion', 'Descripción'])}</td>
           <td>${obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo'])}</td>
-          <td>${obtenerValorColumna(row, ['Codigo Contrato', 'CodigoContrato', 'Contrato'])}</td>
+          <td>${obtenerValorColumna(row, COLUMNAS_CONTRATO)}</td>
           <td><strong>${cantidadPendiente}</strong></td>
           <td>${cuotaRecaudo}</td>
           <td class="${claseStockOrigen}"><strong>${stockOrigenNum}</strong></td>
@@ -816,7 +818,7 @@
 
       const meses = [...new Set(datosPendientes.map(i => obtenerMesDeFila(i)).filter(Boolean))].sort((a, b) => (ORDEN_MESES[a.toLowerCase()] || 99) - (ORDEN_MESES[b.toLowerCase()] || 99));
       const bodegas = [...new Set(datosPendientes.map(i => obtenerValorColumna(i, ['Bodega Encabezado', 'Bodega'])).filter(Boolean))].sort();
-      const clientes = [...new Set(datosPendientes.map(i => obtenerValorColumna(i, ['Razon Social Cliente', 'Sigla Comercial Cliente', 'Cliente'])).filter(Boolean))].sort();
+      const clientes = [...new Set(datosPendientes.map(i => obtenerValorColumna(i, COLUMNAS_CLIENTE)).filter(Boolean))].sort();
 
       sMes.innerHTML = meses.map(m => `<option value="${m}">${m}</option>`).join('');
       sBod.innerHTML = bodegas.map(b => `<option value="${b}">${b}</option>`).join('');
@@ -934,7 +936,7 @@
         item['Entrega Efectiva'] = fechaEfectiva;
 
         const mesCalculado = obtenerMesDeFila(item);
-        const clienteVal = obtenerValorColumna(item, ['Razon Social Cliente', 'Sigla Comercial Cliente', 'Cliente']);
+        const clienteVal = obtenerValorColumna(item, COLUMNAS_CLIENTE);
 
         const payload = {
           idUnico, doc,
@@ -946,7 +948,7 @@
           paciente: obtenerValorColumna(item, ['Nombre Paciente']),
           medicamento: descripcion, 
           codArt: codigoArt,
-          codContrato: obtenerValorColumna(item, ['Codigo Contrato', 'CodigoContrato', 'Contrato']),
+          codContrato: obtenerValorColumna(item, COLUMNAS_CONTRATO),
           cantEntregada: cantidadIngresada,
           cuotaRecaudo: obtenerValorColumna(item, ['Cuota Recaudo']) || '0',
           fechaSubsanacion: fechaRegistroSys,
@@ -987,14 +989,12 @@
       const dataset = soloFiltrados ? datosFiltrados : datosPendientes;
       if (!dataset.length) return alert('No hay datos para exportar.');
 
-      // Encabezado estricto con las 32 columnas solicitadas
       let csvText = COLUMNAS_SOLICITADAS.join(';') + '\n';
       
       dataset.forEach(row => {
         const filaFormateada = COLUMNAS_SOLICITADAS.map(col => {
           let val = obtenerValorColumna(row, [col]);
           
-          // Mapeo directo para campos calculados
           if (col === 'Inventario Disponible en el punto de origen') val = row['Inventario Disponible en el punto de origen'] || 0;
           if (col === 'Inventario BODEGA PENDIENTES NEPS') val = row['Inventario BODEGA PENDIENTES NEPS'] || 0;
           if (col === 'Inventario BODEGA PRINCIPAL CEDI') val = row['Inventario BODEGA PRINCIPAL CEDI'] || 0;
