@@ -313,20 +313,20 @@
     function norm(val) {
       if (!val) return '';
       if (normCache[val] !== undefined) return normCache[val];
-      const res = val.toString().toLowerCase().replace(/[^a-z0-9]/g, '');
+      const res = val.toString().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, '');
       normCache[val] = res;
       return res;
     }
 
     function obtenerValorColumna(row, posiblesNombres) {
       if (!row) return '';
-      
-      // Fallback por sinonimia y búsqueda flex
       const keys = Object.keys(row);
       for (let i = 0; i < posiblesNombres.length; i++) {
         const target = norm(posiblesNombres[i]);
         for (let j = 0; j < keys.length; j++) {
-          if (norm(keys[j]) === target) return row[keys[j]];
+          if (norm(keys[j]) === target && row[keys[j]] !== undefined && row[keys[j]] !== null) {
+            return row[keys[j]];
+          }
         }
       }
       return '';
@@ -337,9 +337,11 @@
       if (!mesText) {
         const fechaOrigen = (obtenerValorColumna(row, ['Fecha Origen Dispensacion', 'Fecha Origen']) || '').split(' ')[0];
         if (fechaOrigen) {
-          const partes = fechaOrigen.split('/');
+          const partes = fechaOrigen.includes('/') ? fechaOrigen.split('/') : fechaOrigen.split('-');
           if (partes.length === 3) {
-            const mIdx = parseInt(partes[1]) - 1;
+            let mIdx = -1;
+            if (partes[0].length === 4) mIdx = parseInt(partes[1]) - 1;
+            else mIdx = parseInt(partes[1]) - 1;
             const nombresMeses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
             mesText = nombresMeses[mIdx] || '';
           }
@@ -446,9 +448,12 @@
     }
 
     function convertirTextoAMatriz(texto) {
-      const lineas = texto.split(/\r?\n/);
+      if (!texto) return [];
+      const limpia = texto.replace(/^\uFEFF/, '');
+      const lineas = limpia.split(/\r?\n/);
       if (!lineas.length) return [];
-      let sep = texto.includes('|') ? '|' : (texto.includes(';') ? ';' : ',');
+
+      let sep = limpia.includes(';') ? ';' : (limpia.includes('|') ? '|' : ',');
       return lineas.map(linea => linea.split(sep).map(v => v.trim().replace(/^"|"$/g, '')));
     }
 
@@ -477,7 +482,7 @@
           fila[colNombre] = rowArr[idx] !== undefined ? rowArr[idx] : '';
         });
 
-        const diffOrig = Math.abs(parseFloat(obtenerValorColumna(fila, ['Diferencia', 'Diferencia Real', 'Cant. Pendiente'])) || 0);
+        const diffOrig = Math.abs(parseFloat(obtenerValorColumna(fila, ['Diferencia', 'Diferencia Real', 'Cant. Pendiente', 'Cantidad Prescrita'])) || 0);
         fila['Diferencia'] = Math.abs(Math.round(diffOrig));
         fila['_CantOriginal'] = Math.abs(Math.round(diffOrig));
         
