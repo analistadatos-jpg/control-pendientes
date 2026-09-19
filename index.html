@@ -287,38 +287,14 @@
     const COLUMNAS_CONTRATO = ['Codigo Contrato', 'CodigoContrato', 'Contrato', 'Cod Contrato', 'No Contrato', 'Código Contrato'];
 
     const COLUMNAS_SOLICITADAS = [
-      'Tipo Comprobante',
-      'Documento',
-      'Fecha Origen Dispensacion',
-      'Razon Social Cliente',
-      'Sigla Comercial Cliente',
-      'Cedula Paciente',
-      'Nombre Paciente',
-      'Edad paciente',
-      'Bodega Encabezado',
-      'Tipo Servicio',
-      'DOMICILIO',
-      'CODIGO CIE 10',
-      'DESCRIPCION CIE 10',
-      'COHORTE',
-      'Contrato',
-      'Codigo Articulo',
-      'Descripcion',
-      'Presentacion',
-      'Grupo',
-      'Unidades',
-      'Cantidad Autorizada',
-      'Cantidad Prescrita',
-      'Diferencia',
-      'Municipio Tipo Comprobante',
-      'Usuario Creacion',
-      'Codigo Contrato',
-      'Cuota Recaudo',
-      'Inventario Disponible en el punto de origen',
-      'Inventario BODEGA PENDIENTES NEPS',
-      'Inventario BODEGA PRINCIPAL CEDI',
-      'Fecha Subsanación',
-      'Entrega Efectiva'
+      'Tipo Comprobante', 'Documento', 'Fecha Origen Dispensacion', 'Razon Social Cliente',
+      'Sigla Comercial Cliente', 'Cedula Paciente', 'Nombre Paciente', 'Edad paciente',
+      'Bodega Encabezado', 'Tipo Servicio', 'DOMICILIO', 'CODIGO CIE 10', 'DESCRIPCION CIE 10',
+      'COHORTE', 'Contrato', 'Codigo Articulo', 'Descripcion', 'Presentacion', 'Grupo',
+      'Unidades', 'Cantidad Autorizada', 'Cantidad Prescrita', 'Diferencia',
+      'Municipio Tipo Comprobante', 'Usuario Creacion', 'Codigo Contrato', 'Cuota Recaudo',
+      'Inventario Disponible en el punto de origen', 'Inventario BODEGA PENDIENTES NEPS',
+      'Inventario BODEGA PRINCIPAL CEDI', 'Fecha Subsanación', 'Entrega Efectiva'
     ];
 
     let datosPendientes = [];
@@ -327,8 +303,11 @@
     const registrosPorPagina = 100;
     let timerDebounce = null;
 
-    // Nombres exactos mapeados según los archivos en el repositorio
-    const ARCHIVO_PENDIENTES = 'Total_Dispensacion_Pendientes Activos.csv';
+    // Nombres exactos de archivos ajustados
+    const ARCHIVOS_PENDIENTES_POSIBLES = [
+      'Total_Dispensacion_Pendientes_Activos.csv',
+      'Total_Dispensacion_Pendientes Activos.csv'
+    ];
     const ARCHIVO_INVENTARIO = 'inventario.csv';
 
     const ORDEN_MESES = {
@@ -367,35 +346,45 @@
 
     async function cargarArchivosAutomaticos() {
       document.getElementById('infoContador').textContent = 'Sincronizando reportes e inventario...';
-      try {
-        const timestamp = '?v=' + Date.now();
-        const respPend = await fetch('./' + encodeURIComponent(ARCHIVO_PENDIENTES) + timestamp);
-        if (respPend.ok) {
-          const textoPend = await respPend.text();
-          parsearMatrizDirecta(convertirTextoAMatriz(textoPend));
-        }
+      let cargadoPendientes = false;
 
+      // Intento de carga flexible para Pendientes
+      for (const nombreArchivo of ARCHIVOS_PENDIENTES_POSIBLES) {
         try {
-          const respInv = await fetch('./' + encodeURIComponent(ARCHIVO_INVENTARIO) + timestamp);
-          if (respInv.ok) {
-            if (ARCHIVO_INVENTARIO.endsWith('.xls') || ARCHIVO_INVENTARIO.endsWith('.xlsx')) {
-              const buffer = await respInv.arrayBuffer();
-              const wb = XLSX.read(new Uint8Array(buffer), { type: 'array', dense: true });
-              const matriz = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '' });
-              procesarMatrizInventarioFast(matriz);
-            } else {
-              const textoInv = await respInv.text();
-              procesarMatrizInventarioFast(convertirTextoAMatriz(textoInv));
+          const timestamp = '?v=' + Date.now();
+          const resp = await fetch('./' + encodeURIComponent(nombreArchivo) + timestamp);
+          if (resp.ok) {
+            const texto = await resp.text();
+            if (texto && texto.length > 50) {
+              parsearMatrizDirecta(convertirTextoAMatriz(texto));
+              cargadoPendientes = true;
+              break;
             }
           }
-        } catch (e) { console.warn('Inventario secundario no detectado.'); }
+        } catch (e) {}
+      }
 
+      // Intento de carga de Inventario
+      try {
+        const timestamp = '?v=' + Date.now();
+        const respInv = await fetch('./' + encodeURIComponent(ARCHIVO_INVENTARIO) + timestamp);
+        if (respInv.ok) {
+          const textoInv = await respInv.text();
+          if (textoInv && textoInv.length > 20) {
+            procesarMatrizInventarioFast(convertirTextoAMatriz(textoInv));
+          }
+        }
+      } catch (e) {
+        console.warn('Inventario no cargado automáticamente.');
+      }
+
+      if (cargadoPendientes) {
         reaplicarSubsanacionesLocal();
         sincronizarDesdeNubeSilencioso();
         poblarSelectoresFiltro();
         aplicarFiltros();
-      } catch (err) {
-        document.getElementById('infoContador').textContent = 'Cargue archivos manualmente.';
+      } else {
+        document.getElementById('infoContador').textContent = '⚠️ Carga manual requerida (Archivos no hallados).';
       }
     }
 
@@ -451,11 +440,6 @@
             row['Estado Final Mennar'] = est;
             row['Fecha Subsanación'] = ajuste.fechaSubsanacion || ajuste.fecha || '';
             row['Entrega Efectiva'] = ajuste.fechaEntregaEfectiva || '';
-          }
-        } else {
-          if ((row['Estado Final Mennar'] || 'Pendiente Activo') === 'Pendiente Activo') {
-            row['Fecha Subsanación'] = '';
-            row['Entrega Efectiva'] = '';
           }
         }
       }
@@ -637,7 +621,7 @@
       if (!file) return alert('Por favor selecciona un archivo de inventario.');
       if (!datosPendientes.length) return alert('Carga primero el archivo de Pendientes.');
 
-      document.getElementById('infoContador').textContent = 'Cruzando Inventario en milisegundos...';
+      document.getElementById('infoContador').textContent = 'Cruzando Inventario...';
       const reader = new FileReader();
 
       if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
