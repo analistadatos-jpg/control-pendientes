@@ -327,6 +327,7 @@
     const registrosPorPagina = 100;
     let timerDebounce = null;
 
+    // Nombres exactos mapeados según los archivos en el repositorio
     const ARCHIVO_PENDIENTES = 'Total_Dispensacion_Pendientes Activos.csv';
     const ARCHIVO_INVENTARIO = 'inventario.csv';
 
@@ -377,8 +378,15 @@
         try {
           const respInv = await fetch('./' + encodeURIComponent(ARCHIVO_INVENTARIO) + timestamp);
           if (respInv.ok) {
-            const textoInv = await respInv.text();
-            procesarMatrizInventarioFast(convertirTextoAMatriz(textoInv));
+            if (ARCHIVO_INVENTARIO.endsWith('.xls') || ARCHIVO_INVENTARIO.endsWith('.xlsx')) {
+              const buffer = await respInv.arrayBuffer();
+              const wb = XLSX.read(new Uint8Array(buffer), { type: 'array', dense: true });
+              const matriz = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '' });
+              procesarMatrizInventarioFast(matriz);
+            } else {
+              const textoInv = await respInv.text();
+              procesarMatrizInventarioFast(convertirTextoAMatriz(textoInv));
+            }
           }
         } catch (e) { console.warn('Inventario secundario no detectado.'); }
 
