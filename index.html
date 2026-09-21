@@ -293,29 +293,39 @@
             const sheet = workbook.Sheets[workbook.SheetNames[0]];
             const json = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false });
 
+            // Función flexible para buscar claves insensibles a mayúsculas/espacios/tildes
             return json.map((row, idx) => {
-                const getVal = (keys) => {
-                    for (let k of keys) {
-                        if (row[k] !== undefined && row[k] !== '') return row[k];
+                const normalizeKey = (k) => String(k).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
+                const rowNormalized = {};
+                Object.keys(row).forEach(k => {
+                    rowNormalized[normalizeKey(k)] = row[k];
+                });
+
+                const getVal = (candidates) => {
+                    for (let c of candidates) {
+                        const normC = normalizeKey(c);
+                        if (rowNormalized[normC] !== undefined && rowNormalized[normC] !== '') {
+                            return String(rowNormalized[normC]).trim();
+                        }
                     }
                     return '';
                 };
 
-                const fechaBruta = getVal(['Fecha Origen Dispensacion', 'FECHA ORIGEN', 'Fecha Origen']);
+                const fechaBruta = getVal(['Fecha Origen Dispensacion', 'FECHA ORIGEN', 'Fecha Origen', 'FechaOrigenDispensacion']);
 
                 return {
-                    id: getVal(['Documento', 'DOCUMENTO']) + '_' + idx,
-                    documento: getVal(['Documento', 'DOCUMENTO']),
+                    id: (getVal(['Documento', 'DOCUMENTO', 'num_dispensa']) || 'DOC') + '_' + idx,
+                    documento: getVal(['Documento', 'DOCUMENTO', 'num_dispensa']),
                     fechaOrigen: formatearFechaExcel(fechaBruta),
-                    bodega: getVal(['Bodega Encabezado', 'BODEGA', 'Bodega']),
-                    cliente: getVal(['Razon Social Cliente', 'CLIENTE', 'Cliente']),
-                    cedula: getVal(['Cedula Paciente', 'CEDULA', 'Cedula Paciente', 'Cedula']),
-                    paciente: getVal(['Nombre Paciente', 'PACIENTE', 'Paciente']),
-                    medicamento: getVal(['Descripcion', 'MEDICAMENTO', 'Descripcion']),
-                    codigoArticulo: getVal(['Codigo Articulo', 'CODIGO', 'Codigo Articulo']),
-                    cantidadPendiente: parseFloat(getVal(['Cantidad Autorizada', 'Diferencia', 'Unidades'])) || 0,
-                    fechaSubsanacion: '', 
-                    entregaEfectiva: '',  
+                    bodega: getVal(['Bodega Encabezado', 'BODEGA', 'Bodega', 'BodegaEncabezado']),
+                    cliente: getVal(['Razon Social Cliente', 'CLIENTE', 'Cliente', 'RazonSocialCliente', 'Sigla Comercial Cliente']),
+                    cedula: getVal(['Cedula Paciente', 'CEDULA', 'Cedula', 'CedulaPaciente', 'Documento Paciente']),
+                    paciente: getVal(['Nombre Paciente', 'PACIENTE', 'Paciente', 'NombrePaciente']),
+                    medicamento: getVal(['Descripcion', 'MEDICAMENTO', 'Medicamento', 'DescripcionArticulo']),
+                    codigoArticulo: getVal(['Codigo Articulo', 'CODIGO', 'CodigoArticulo', 'Codigo']),
+                    cantidadPendiente: parseFloat(getVal(['Cantidad Autorizada', 'Diferencia', 'Unidades', 'CantidadPrescrita', 'CantidadPendiente'])) || 0,
+                    fechaSubsanacion: '',
+                    entregaEfectiva: '',
                     estado: 'Pendiente Activo'
                 };
             });
@@ -328,7 +338,7 @@
 
             let invMap = {};
             json.forEach(row => {
-                const sku = String(row['Codigo Articulo'] || row['CODIGO'] || '').trim();
+                const sku = String(row['Codigo Articulo'] || row['CODIGO'] || row['Codigo'] || '').trim();
                 const unidad = String(row['Unidad'] || row['UNIDAD'] || row['Bodega'] || '').trim();
                 const stock = parseFloat(row['Stock'] || row['STOCK'] || row['Cantidad'] || 0) || 0;
 
