@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>APP CONTROL SUBSANACION DE PENDIENTES MENNAR</title>
+  <!-- SheetJS para soporte de archivos Excel -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <style>
     :root {
@@ -146,7 +147,7 @@
   <div class="card">
     <div class="grid-files">
       <div>
-        <label for="csvFileInput">1. Cargar Archivo de Pendientes (DetalladoDispensacion3 / CSV / Excel):</label>
+        <label for="csvFileInput">1. Cargar Archivo de Pendientes (CSV / Excel / TXT):</label>
         <div style="display: flex; gap: 6px;">
           <input type="file" id="csvFileInput" accept=".csv, .xlsx, .xls, .txt" onclick="this.value=null;" />
           <button class="btn-primary" style="width: auto; padding: 0 10px;" onclick="cargarArchivoManualmente()">Procesar</button>
@@ -283,7 +284,11 @@
     const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxHzhqkIySVU1v-QFZnJjPoXVW83pg40X7orwR5d96qs3DWyEBfe3Wl9mwAsnE9AMIr/exec';
     const CHANGES_KEY = 'app_pendientes_subsanaciones';
 
-    // Lista estricta de las 32 columnas solicitadas para la descarga
+    // Nombres exactos de archivos en el repositorio de GitHub Pages
+    const ARCHIVO_PENDIENTES = 'pendientes.csv';
+    const ARCHIVO_INVENTARIO = 'inventario.csv';
+
+    // Lista de las 32 columnas estructuradas para la descarga CSV
     const COLUMNAS_SOLICITADAS = [
       'Tipo Comprobante',
       'Documento',
@@ -325,9 +330,6 @@
     const registrosPorPagina = 100;
     let timerDebounce = null;
 
-    const ARCHIVO_PENDIENTES = 'Total_Dispensacion_Pendientes Activos.csv';
-    const ARCHIVO_INVENTARIO = 'inventario.csv';
-
     const ORDEN_MESES = {
       'enero': 1, 'febrero': 2, 'marzo': 3, 'abril': 4, 'mayo': 5, 'junio': 6,
       'julio': 7, 'agosto': 8, 'septiembre': 9, 'octubre': 10, 'noviembre': 11, 'diciembre': 12
@@ -363,7 +365,7 @@
     });
 
     async function cargarArchivosAutomaticos() {
-      document.getElementById('infoContador').textContent = 'Sincronizando reportes e inventario...';
+      document.getElementById('infoContador').textContent = 'Cargando datos automáticamente...';
       try {
         const timestamp = '?v=' + Date.now();
         const respPend = await fetch('./' + encodeURIComponent(ARCHIVO_PENDIENTES) + timestamp);
@@ -385,7 +387,7 @@
         poblarSelectoresFiltro();
         aplicarFiltros();
       } catch (err) {
-        document.getElementById('infoContador').textContent = 'Cargue archivos manualmente.';
+        document.getElementById('infoContador').textContent = 'Error al cargar datos automáticos. Cargue archivos manualmente.';
       }
     }
 
@@ -627,7 +629,7 @@
       if (!file) return alert('Por favor selecciona un archivo de inventario.');
       if (!datosPendientes.length) return alert('Carga primero el archivo de Pendientes.');
 
-      document.getElementById('infoContador').textContent = 'Cruzando Inventario en milisegundos...';
+      document.getElementById('infoContador').textContent = 'Cruzando Inventario...';
       const reader = new FileReader();
 
       if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
@@ -987,14 +989,12 @@
       const dataset = soloFiltrados ? datosFiltrados : datosPendientes;
       if (!dataset.length) return alert('No hay datos para exportar.');
 
-      // Encabezado estricto con las 32 columnas seleccionadas
       let csvText = COLUMNAS_SOLICITADAS.join(';') + '\n';
       
       dataset.forEach(row => {
         const filaFormateada = COLUMNAS_SOLICITADAS.map(col => {
           let val = obtenerValorColumna(row, [col]);
           
-          // Mapeo directo para campos calculados
           if (col === 'Inventario Disponible en el punto de origen') val = row['Inventario Disponible en el punto de origen'] || 0;
           if (col === 'Inventario BODEGA PENDIENTES NEPS') val = row['Inventario BODEGA PENDIENTES NEPS'] || 0;
           if (col === 'Inventario BODEGA PRINCIPAL CEDI') val = row['Inventario BODEGA PRINCIPAL CEDI'] || 0;
