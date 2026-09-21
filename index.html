@@ -1,819 +1,547 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>APP CONTROL SUBSANACION DE PENDIENTES MENNAR</title>
-  
-  <!-- Estilos Bootstrap y CDN SheetJS -->
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-
-  <style>
-    body { font-size: 0.82rem; background-color: #f8f9fa; }
-    .header-title { color: #0d6efd; font-weight: bold; margin-bottom: 15px; }
-    .card-panel { padding: 12px; margin-bottom: 15px; background: #fff; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-    .table-container { overflow-x: auto; max-height: 650px; background: white; }
-    table th { background-color: #f1f4f8 !important; font-size: 0.78rem; text-align: center; vertical-align: middle; white-space: nowrap; cursor: pointer; }
-    table td { vertical-align: middle; white-space: nowrap; font-size: 0.78rem; }
-    .badge-done { background-color: #198754; color: white; padding: 4px 8px; border-radius: 4px; }
-    .badge-pending { background-color: #dc3545; color: white; padding: 4px 8px; border-radius: 4px; }
-    .badge-partial { background-color: #ffc107; color: #000; padding: 4px 8px; border-radius: 4px; }
-    .stock-rojo { background-color: #f8d7da !important; color: #842029; font-weight: bold; }
-    .btn-subsanar { padding: 2px 8px; font-size: 0.75rem; border-radius: 3px; background-color: #0d6efd; color: white; border: none; }
-    .btn-subsanar:hover { background-color: #0b5ed7; }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>APP CONTROL SUBSANACIÓN DE PENDIENTES MENNAR V2</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- SheetJS para lectura binaria universal (CSV, XLSX, XLS) -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
-<body class="p-3">
+<body class="bg-gray-100 text-gray-800 font-sans min-h-screen">
 
-  <h4 class="header-title">APP CONTROL SUBSANACION DE PENDIENTES MENNAR</h4>
-
-  <!-- Panel Superior de Controles y Archivos -->
-  <div class="card-panel">
-    <div class="row g-2 align-items-center">
-      <div class="col-md-5">
-        <label class="form-label mb-1"><strong>1. Cargar Archivo de Pendientes (Delimitado por Pipe |):</strong></label>
-        <div class="input-group input-group-sm">
-          <input type="file" id="csvFileInput" class="form-control" accept=".csv, .txt, .xlsx, .xls">
-          <button class="btn btn-primary" onclick="cargarArchivoManualmente()">Procesar</button>
+    <!-- Navbar -->
+    <header class="bg-blue-800 text-white shadow-lg py-4 px-6 mb-6">
+        <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+            <h1 class="text-xl md:text-2xl font-bold tracking-wide flex items-center gap-2">
+                <i class="fa-solid fa-notes-medical text-yellow-400"></i>
+                APP CONTROL SUBSANACIÓN DE PENDIENTES MENNAR V2
+            </h1>
+            <span class="text-xs bg-blue-900 text-blue-200 px-3 py-1 rounded-full border border-blue-700">
+                Auto-load activo (SheetJS + Cache Local)
+            </span>
         </div>
-      </div>
+    </header>
 
-      <div class="col-md-5">
-        <label class="form-label mb-1"><strong>2. Cargar Archivo de Inventario (Excel / CSV):</strong></label>
-        <div class="input-group input-group-sm">
-          <input type="file" id="csvInvInput" class="form-control" accept=".csv, .xlsx, .xls">
-          <button class="btn btn-primary" onclick="cargarInventarioManualmente()">Cargar Stock</button>
-        </div>
-      </div>
-
-      <div class="col-md-2 d-flex flex-column gap-1 pt-3">
-        <button class="btn btn-success btn-sm w-100" onclick="exportarCSV(false)">⬇ Exportar CSV Filtrado</button>
-        <button class="btn btn-danger btn-sm w-100" onclick="limpiarDatos()">🗑 Restablecer / Borrar Datos</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Panel de Filtros -->
-  <div class="card-panel">
-    <strong class="d-block mb-2">Filtros y Ordenamiento</strong>
-    <div class="row g-2">
-      <div class="col-md-2">
-        <label class="form-label mb-0">Búsqueda General:</label>
-        <input type="text" id="searchInput" class="form-control form-control-sm" placeholder="Cédula, Nombre, Documento..." onkeyup="debounceFiltros()">
-      </div>
-
-      <div class="col-md-2">
-        <label class="form-label mb-0">Ordenar Por:</label>
-        <select id="selectOrdenar" class="form-select form-select-sm" onchange="aplicarFiltros()">
-          <option value="fecha_asc">Fecha Origen (Más Antiguo)</option>
-          <option value="fecha_desc">Fecha Origen (Más Reciente)</option>
-          <option value="codigo_asc">Código Articulo (A-Z)</option>
-          <option value="codigo_desc">Código Articulo (Z-A)</option>
-          <option value="mes_asc">Mes Dispensación</option>
-        </select>
-      </div>
-
-      <div class="col-md-2">
-        <label class="form-label mb-0">Mes Dispensación (Ctrl + clic):</label>
-        <select id="selectMes" class="form-select form-select-sm" multiple style="height: 31px;" onchange="aplicarFiltros()"></select>
-      </div>
-
-      <div class="col-md-2">
-        <label class="form-label mb-0">Bodega / Punto (Ctrl + clic):</label>
-        <select id="selectBodega" class="form-select form-select-sm" multiple style="height: 31px;" onchange="aplicarFiltros()"></select>
-      </div>
-
-      <div class="col-md-1">
-        <label class="form-label mb-0">Cliente / EPS:</label>
-        <select id="selectCliente" class="form-select form-select-sm" onchange="aplicarFiltros()"></select>
-      </div>
-
-      <div class="col-md-1">
-        <label class="form-label mb-0">Inv. Origen:</label>
-        <select id="selectInventario" class="form-select form-select-sm" onchange="aplicarFiltros()">
-          <option value="">-- Todo --</option>
-          <option value="con_stock">Con Stock (>0)</option>
-          <option value="sin_stock">Sin Stock (=0)</option>
-        </select>
-      </div>
-
-      <div class="col-md-1">
-        <label class="form-label mb-0">Inv. Bod. NEPS:</label>
-        <select id="selectBodPendientes" class="form-select form-select-sm" onchange="aplicarFiltros()">
-          <option value="">-- Toda Bod. --</option>
-          <option value="con_stock">Con Stock (>0)</option>
-          <option value="sin_stock">Sin Stock (=0)</option>
-        </select>
-      </div>
-
-      <div class="col-md-1">
-        <label class="form-label mb-0">Inv. CEDI:</label>
-        <select id="selectCedi" class="form-select form-select-sm" onchange="aplicarFiltros()">
-          <option value="">-- Todo CEDI --</option>
-          <option value="con_stock">Con Stock (>0)</option>
-          <option value="sin_stock">Sin Stock (=0)</option>
-        </select>
-      </div>
-
-      <div class="col-md-2 mt-2">
-        <label class="form-label mb-0">Estado Subsanación:</label>
-        <select id="selectEstado" class="form-select form-select-sm" onchange="aplicarFiltros()">
-          <option value="">-- Todos los Estados --</option>
-          <option value="Pendiente">Pendiente (Todos)</option>
-          <option value="Pendiente Activo">Pendiente Activo</option>
-          <option value="Pendiente Parcial">Pendiente Parcial</option>
-          <option value="Subsanado">Subsanado</option>
-        </select>
-      </div>
-    </div>
-  </div>
-
-  <!-- Barra de estado -->
-  <div class="d-flex justify-content-between align-items-center mb-2">
-    <div>
-      <strong id="infoContador" class="text-secondary">Iniciando aplicación...</strong>
-      <button class="btn btn-primary btn-sm ms-2" onclick="exportarCSV(true)">📥 Descargar Filtro Actual (CSV)</button>
-    </div>
-    <div class="d-flex gap-2 align-items-center">
-      <button class="btn btn-outline-secondary btn-sm" onclick="cambiarPagina(-1)">⬅ Anterior</button>
-      <span id="infoPagina" class="fw-bold">Página 1 de 1</span>
-      <button class="btn btn-outline-secondary btn-sm" onclick="cambiarPagina(1)">Siguiente ➡</button>
-    </div>
-  </div>
-
-  <!-- Tabla de Registros -->
-  <div class="table-container border rounded">
-    <table class="table table-sm table-hover table-striped mb-0" id="tablaPendientes">
-      <thead>
-        <tr>
-          <th onclick="cambiarOrdenClick('mes_asc')">Mes ⇳</th>
-          <th>Documento</th>
-          <th onclick="cambiarOrdenClick('fecha_asc')">Fecha Origen ⇳</th>
-          <th>Bodega</th>
-          <th>Cliente / EPS</th>
-          <th>Cédula</th>
-          <th>Paciente</th>
-          <th>Medicamento</th>
-          <th onclick="cambiarOrdenClick('codigo_asc')">Código Art. ⇳</th>
-          <th>Código Cont.</th>
-          <th>Cant. Pend.</th>
-          <th>Cuota Recaudo</th>
-          <th>Inv. Origen</th>
-          <th>Inv. Bod. Pendientes</th>
-          <th>Inv. CEDI</th>
-          <th>Fecha Subsanación</th>
-          <th>Entrega Efectiva</th>
-          <th>Estado</th>
-          <th>Acción</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-  </div>
-
-  <!-- Lógica JavaScript -->
-  <script>
-    const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxHzhqkIySVU1v-QFZnJjPoXVW83pg40X7orwR5d96qs3DWyEBfe3Wl9mwAsnE9AMIr/exec';
-    const CHANGES_KEY = 'app_pendientes_subsanaciones';
-
-    const ARCHIVO_PENDIENTES = 'pendientes.csv';
-    const ARCHIVO_INVENTARIO = 'inventario.csv';
-
-    // Lista de las columnas exactas solicitadas para descargar
-    const COLUMNAS_DESCARGA = [
-      'Tipo Comprobante', 'Documento', 'Fecha Origen Dispensacion', 'Documento Cliente',
-      'Razon Social Cliente', 'Sigla Comercial Cliente', 'Documento Paciente', 'Cedula Paciente',
-      'Nombre Paciente', 'Edad paciente', 'Bodega Encabezado', 'Tipo Servicio', 'DOMICILIO',
-      'Cuota Recaudo', 'Codigo Articulo', 'Descripcion', 'Presentacion', 'Grupo',
-      'Unidades', 'Cantidad Autorizada', 'Cantidad Prescrita', 'Diferencia',
-      'Municipio Tipo Comprobante', 'Usuario Creacion',
-      'Inventario Disponible en el punto de origen', 'Inventario BODEGA PENDIENTES NEPS',
-      'Inventario BODEGA PRINCIPAL CEDI', 'Fecha Subsanación', 'Entrega Efectiva', 'Estado Final Mennar'
-    ];
-
-    let datosPendientes = [];
-    let datosFiltrados = [];
-    let paginaActual = 1;
-    const registrosPorPagina = 100;
-    let timerDebounce = null;
-
-    const ORDEN_MESES = {
-      'enero': 1, 'febrero': 2, 'marzo': 3, 'abril': 4, 'mayo': 5, 'junio': 6,
-      'julio': 7, 'agosto': 8, 'septiembre': 9, 'octubre': 10, 'noviembre': 11, 'diciembre': 12
-    };
-
-    const normCache = Object.create(null);
-    function norm(val) {
-      if (!val) return '';
-      if (normCache[val] !== undefined) return normCache[val];
-      const res = val.toString().toLowerCase().replace(/[^a-z0-9]/g, '');
-      normCache[val] = res;
-      return res;
-    }
-
-    function limpiarEspacios(texto) {
-      if (!texto) return '';
-      return texto.toString().replace(/[\r\n]+/g, ' ').trim();
-    }
-
-    function obtenerMesDeFila(row) {
-      let mesText = obtenerValorColumna(row, ['Mes_Dispensacion', 'Mes Dispensacion']);
-      if (!mesText) {
-        const fechaOrigen = (obtenerValorColumna(row, ['Fecha Origen Dispensacion', 'Fecha Origen']) || '').split(' ')[0];
-        if (fechaOrigen) {
-          const partes = fechaOrigen.split('/');
-          if (partes.length === 3) {
-            const mIdx = parseInt(partes[1]) - 1;
-            const nombresMeses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
-            mesText = nombresMeses[mIdx] || '';
-          }
-        }
-      }
-      return mesText || '';
-    }
-
-    window.addEventListener('DOMContentLoaded', () => {
-      cargarArchivosAutomaticos();
-    });
-
-    async function cargarArchivosAutomaticos() {
-      document.getElementById('infoContador').textContent = 'Cargando datos automáticamente...';
-      try {
-        const timestamp = '?v=' + Date.now();
+    <main class="max-w-7xl mx-auto px-4 pb-12">
         
-        const respPend = await fetch('./' + encodeURIComponent(ARCHIVO_PENDIENTES) + timestamp);
-        if (respPend.ok) {
-          const texto = await respPend.text();
-          parsearCSVConPipe(texto);
-        } else {
-          throw new Error('No se encontró el archivo ' + ARCHIVO_PENDIENTES);
-        }
+        <!-- Panel de Carga y Acciones -->
+        <section class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            
+            <!-- Cargar Pendientes -->
+            <div class="bg-white p-4 rounded-xl shadow-md border border-gray-200">
+                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                    1. Cargar Pendientes (CSV/Excel)
+                </label>
+                <input type="file" id="filePendientes" accept=".csv,.xlsx,.xls" class="block w-full text-xs text-gray-500 file:mr-2 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 mb-2">
+                <button onclick="cargarPendientesManual()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-1.5 px-3 rounded text-xs transition">
+                    Procesar Pendientes
+                </button>
+            </div>
 
-        try {
-          const respInv = await fetch('./' + encodeURIComponent(ARCHIVO_INVENTARIO) + timestamp);
-          if (respInv.ok) {
-            const bufferInv = await respInv.arrayBuffer();
-            const wbInv = XLSX.read(new Uint8Array(bufferInv), { type: 'array' });
-            const matrizInv = XLSX.utils.sheet_to_json(wbInv.Sheets[wbInv.SheetNames[0]], { header: 1, defval: '' });
-            procesarMatrizInventarioFast(matrizInv);
-          }
-        } catch (e) { 
-          console.warn('Inventario secundario no detectado.'); 
-        }
+            <!-- Cargar Inventario -->
+            <div class="bg-white p-4 rounded-xl shadow-md border border-gray-200">
+                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                    2. Cargar Inventario (Excel/CSV)
+                </label>
+                <input type="file" id="fileInventario" accept=".csv,.xlsx,.xls" class="block w-full text-xs text-gray-500 file:mr-2 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100 mb-2">
+                <button onclick="cargarInventarioManual()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-1.5 px-3 rounded text-xs transition">
+                    Cargar Stock
+                </button>
+            </div>
 
-        reaplicarSubsanacionesLocal();
-        sincronizarDesdeNubeSilencioso();
-        poblarSelectoresFiltro();
-        aplicarFiltros();
-      } catch (err) {
-        console.error(err);
-        document.getElementById('infoContador').textContent = 'Error al cargar datos automáticos (' + err.message + '). Cargue archivos manualmente.';
-      }
-    }
+            <!-- Exportar / Reset -->
+            <div class="bg-white p-4 rounded-xl shadow-md border border-gray-200 flex flex-col justify-between">
+                <span class="block text-sm font-semibold text-gray-700 mb-2">Acciones Globales</span>
+                <div class="space-y-2">
+                    <button onclick="exportarCSVCompleto()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-1.5 px-3 rounded text-xs transition flex items-center justify-center gap-1">
+                        <i class="fa-solid fa-download"></i> Exportar CSV Completo
+                    </button>
+                    <button onclick="restablecerDatos()" class="w-full bg-rose-600 hover:bg-rose-700 text-white font-semibold py-1.5 px-3 rounded text-xs transition flex items-center justify-center gap-1">
+                        <i class="fa-solid fa-trash"></i> Restablecer / Borrar Datos
+                    </button>
+                </div>
+            </div>
 
-    function parsearCSVConPipe(contenido) {
-      if (!contenido) return;
-      const lineas = contenido.split(/\r?\n/);
-      if (lineas.length < 2) return;
+            <!-- Resumen KPI -->
+            <div class="bg-white p-4 rounded-xl shadow-md border border-gray-200 flex flex-col justify-between">
+                <span class="block text-sm font-semibold text-gray-700">Resumen Rápido</span>
+                <div class="grid grid-cols-3 gap-1 text-center my-auto">
+                    <div class="bg-red-50 p-1.5 rounded">
+                        <div id="kpiActivos" class="text-base font-bold text-red-600">0</div>
+                        <div class="text-[10px] text-red-500 font-medium">Activos</div>
+                    </div>
+                    <div class="bg-yellow-50 p-1.5 rounded">
+                        <div id="kpiParciales" class="text-base font-bold text-yellow-600">0</div>
+                        <div class="text-[10px] text-yellow-600 font-medium">Parciales</div>
+                    </div>
+                    <div class="bg-green-50 p-1.5 rounded">
+                        <div id="kpiSubsanados" class="text-base font-bold text-green-600">0</div>
+                        <div class="text-[10px] text-green-600 font-medium">Subsanados</div>
+                    </div>
+                </div>
+            </div>
 
-      // La primera fila se omite; las cabeceras comienzan en la segunda fila (índice 1)
-      const cabeceras = lineas[1].split('|').map(c => limpiarEspacios(c));
-      datosPendientes = [];
+        </section>
 
-      for (let i = 2; i < lineas.length; i++) {
-        const linea = lineas[i];
-        if (!linea || !linea.trim()) continue;
+        <!-- Filtros y Búsqueda -->
+        <section class="bg-white p-5 rounded-xl shadow-md border border-gray-200 mb-6">
+            <h2 class="text-sm font-bold text-gray-700 uppercase tracking-wider mb-4 border-b pb-2 flex items-center gap-2">
+                <i class="fa-solid fa-filter text-blue-600"></i> Filtros y Ordenamiento
+            </h2>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+                <!-- Búsqueda General -->
+                <div>
+                    <label class="block font-medium text-gray-600 mb-1">Búsqueda General:</label>
+                    <input type="text" id="filterSearch" oninput="aplicarFiltros()" placeholder="Buscar documento, paciente, código..." class="w-full border rounded px-2.5 py-1.5 focus:ring-2 focus:ring-blue-500 outline-none">
+                </div>
 
-        const valores = linea.split('|');
-        if (valores.length < 2) continue;
+                <!-- Ordenar por -->
+                <div>
+                    <label class="block font-medium text-gray-600 mb-1">Ordenar Por:</label>
+                    <select id="filterOrder" onchange="aplicarFiltros()" class="w-full border rounded px-2 py-1.5 focus:ring-2 focus:ring-blue-500 outline-none">
+                        <option value="fecha_asc">Fecha Origen (Más Antiguo primero) ⬇️</option>
+                        <option value="fecha_desc">Fecha Origen (Más Reciente primero) ⬆️</option>
+                        <option value="code_asc">Código Artículo (A-Z)</option>
+                        <option value="code_desc">Código Artículo (Z-A)</option>
+                    </select>
+                </div>
 
-        const fila = {};
-        cabeceras.forEach((col, idx) => {
-          if (col) {
-            fila[col] = valores[idx] !== undefined ? limpiarEspacios(valores[idx]) : '';
-          }
+                <!-- Cliente / EPS -->
+                <div>
+                    <label class="block font-medium text-gray-600 mb-1">Cliente / EPS:</label>
+                    <select id="filterCliente" onchange="aplicarFiltros()" class="w-full border rounded px-2 py-1.5 focus:ring-2 focus:ring-blue-500 outline-none">
+                        <option value="">-- Todos los Clientes --</option>
+                    </select>
+                </div>
+
+                <!-- Estado Subsanación -->
+                <div>
+                    <label class="block font-medium text-gray-600 mb-1">Estado Subsanación:</label>
+                    <select id="filterEstado" onchange="aplicarFiltros()" class="w-full border rounded px-2 py-1.5 focus:ring-2 focus:ring-blue-500 outline-none">
+                        <option value="">-- Todos los Estados --</option>
+                        <option value="Pendiente Activo">Pendiente Activo</option>
+                        <option value="Pendiente Parcial">Pendiente Parcial</option>
+                        <option value="Subsanado">Subsanado</option>
+                    </select>
+                </div>
+
+                <!-- Inv. Origen -->
+                <div>
+                    <label class="block font-medium text-gray-600 mb-1">Inv. Punto Origen:</label>
+                    <select id="filterInvOrigen" onchange="aplicarFiltros()" class="w-full border rounded px-2 py-1.5 focus:ring-2 focus:ring-blue-500 outline-none">
+                        <option value="">-- Todo el Inventario --</option>
+                        <option value="con_stock">Con Stock (> 0)</option>
+                        <option value="sin_stock">Sin Stock (= 0)</option>
+                    </select>
+                </div>
+
+                <!-- Inv. Bodega Pendientes NEPS -->
+                <div>
+                    <label class="block font-medium text-gray-600 mb-1">Inv. Bodega Pendientes NEPS:</label>
+                    <select id="filterInvNeps" onchange="aplicarFiltros()" class="w-full border rounded px-2 py-1.5 focus:ring-2 focus:ring-blue-500 outline-none">
+                        <option value="">-- Toda Bod. Pendientes --</option>
+                        <option value="con_stock">Con Stock (> 0)</option>
+                        <option value="sin_stock">Sin Stock (= 0)</option>
+                    </select>
+                </div>
+
+                <!-- Inv. CEDI Principal -->
+                <div>
+                    <label class="block font-medium text-gray-600 mb-1">Inv. CEDI Principal:</label>
+                    <select id="filterInvCedi" onchange="aplicarFiltros()" class="w-full border rounded px-2 py-1.5 focus:ring-2 focus:ring-blue-500 outline-none">
+                        <option value="">-- Todo CEDI --</option>
+                        <option value="con_stock">Con Stock (> 0)</option>
+                        <option value="sin_stock">Sin Stock (= 0)</option>
+                    </select>
+                </div>
+
+                <!-- Botón Descargar Filtro -->
+                <div class="flex items-end">
+                    <button onclick="exportarFiltroActual()" class="w-full bg-slate-700 hover:bg-slate-800 text-white font-semibold py-1.5 px-3 rounded text-xs transition flex items-center justify-center gap-1">
+                        <i class="fa-solid fa-file-excel"></i> Descargar Filtro Actual
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Tabla de Registros -->
+        <section class="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
+            <div class="p-4 bg-gray-50 border-b flex justify-between items-center text-xs">
+                <span id="counterInfo" class="font-semibold text-gray-600">Cargando registros...</span>
+                <span id="statusIndicator" class="text-blue-600 font-semibold">Inicializando...</span>
+            </div>
+
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs border-collapse">
+                    <thead>
+                        <tr class="bg-gray-800 text-white uppercase text-[10px] tracking-wider">
+                            <th class="p-2 border-r border-gray-700">Documento</th>
+                            <th class="p-2 border-r border-gray-700">Fecha Origen</th>
+                            <th class="p-2 border-r border-gray-700">Bodega</th>
+                            <th class="p-2 border-r border-gray-700">Cliente / EPS</th>
+                            <th class="p-2 border-r border-gray-700">Paciente</th>
+                            <th class="p-2 border-r border-gray-700">Medicamento</th>
+                            <th class="p-2 border-r border-gray-700 text-center">Código Art.</th>
+                            <th class="p-2 border-r border-gray-700 text-center">Cant. Pend.</th>
+                            <th class="p-2 border-r border-gray-700 text-center bg-blue-900">Inv. Origen</th>
+                            <th class="p-2 border-r border-gray-700 text-center bg-blue-900">Inv. NEPS</th>
+                            <th class="p-2 border-r border-gray-700 text-center bg-blue-900">Inv. CEDI</th>
+                            <th class="p-2 border-r border-gray-700 text-center">Entrega Efectiva</th>
+                            <th class="p-2 border-r border-gray-700 text-center">Estado</th>
+                            <th class="p-2 text-center">Acción</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody" class="divide-y divide-gray-200">
+                        <!-- Llenado dinámicamente con JavaScript -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Paginación -->
+            <div class="p-4 bg-gray-50 border-t flex justify-between items-center text-xs">
+                <button onclick="cambiarPagina(-1)" class="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded font-semibold text-gray-700 disabled:opacity-50" id="btnPrev">
+                    ⬅️ Anterior
+                </button>
+                <span id="pageInfo" class="font-semibold text-gray-600">Página 1 de 1</span>
+                <button onclick="cambiarPagina(1)" class="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded font-semibold text-gray-700 disabled:opacity-50" id="btnNext">
+                    Siguiente ➡️
+                </button>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Lógica Principal -->
+    <script>
+        let rawPendientes = [];
+        let rawInventario = {};
+        let filteredPendientes = [];
+        let currentPage = 1;
+        const pageSize = 50;
+
+        const BODEGA_CEDI = "BODEGA PRINCIPAL CEDI";
+
+        window.addEventListener('DOMContentLoaded', async () => {
+            cargarCacheLocal();
+            await cargarAutomaticoRepo();
         });
 
-        const diffOrig = Math.abs(parseFloat(obtenerValorColumna(fila, ['Diferencia', 'Diferencia Real', 'Cant. Pendiente'])) || 0);
-        fila['Diferencia'] = Math.abs(Math.round(diffOrig));
-        fila['_CantOriginal'] = Math.abs(Math.round(diffOrig));
+        function cargarCacheLocal() {
+            const cachedPen = localStorage.getItem('pendientes_data');
+            const cachedInv = localStorage.getItem('inventario_data');
 
-        fila['Inventario Disponible en el punto de origen'] = 0;
-        fila['Inventario BODEGA PENDIENTES NEPS'] = 0;
-        fila['Inventario BODEGA PRINCIPAL CEDI'] = 0;
-        fila['Fecha Subsanación'] = '';
-        fila['Entrega Efectiva'] = '';
-        fila['Estado Final Mennar'] = 'Pendiente Activo';
-
-        datosPendientes.push(fila);
-      }
-    }
-
-    function sincronizarDesdeNubeSilencioso() {
-      if (!WEB_APP_URL) return reaplicarSubsanacionesLocal();
-
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
-
-      fetch(WEB_APP_URL, { signal: controller.signal })
-        .then(res => res.json())
-        .then(mapaAjustes => {
-          clearTimeout(timeoutId);
-          if (mapaAjustes && typeof mapaAjustes === 'object') {
-            let localCache = {};
-            try { localCache = JSON.parse(localStorage.getItem(CHANGES_KEY)) || {}; } catch(e){}
-            const fusion = Object.assign({}, localCache, mapaAjustes);
-            localStorage.setItem(CHANGES_KEY, JSON.stringify(fusion));
-            aplicarMapaAjustes(fusion);
+            if (cachedPen) {
+                try { rawPendientes = JSON.parse(cachedPen); } catch(e){}
+            }
+            if (cachedInv) {
+                try { rawInventario = JSON.parse(cachedInv); } catch(e){}
+            }
+            poblarClientesDropdown();
             aplicarFiltros();
-          }
-        })
-        .catch(() => {
-          clearTimeout(timeoutId);
-          reaplicarSubsanacionesLocal();
-        });
-    }
-
-    function aplicarMapaAjustes(mapaAjustes) {
-      if (!mapaAjustes) return;
-      for (let i = 0; i < datosPendientes.length; i++) {
-        const row = datosPendientes[i];
-        const doc = obtenerValorColumna(row, ['Documento']);
-        const cod = obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo']);
-        const idUnico = norm(doc + '_' + cod);
-
-        if (mapaAjustes[idUnico]) {
-          const ajuste = mapaAjustes[idUnico];
-          const cantOrig = row['_CantOriginal'] || 0;
-          const cantEntregada = parseInt(ajuste.cantEntregada) || 0;
-          const est = ajuste.est || 'Pendiente Activo';
-
-          if (est === 'Pendiente Activo') {
-            row['Diferencia Real'] = cantOrig;
-            row['Diferencia'] = cantOrig;
-            row['Estado Final Mennar'] = 'Pendiente Activo';
-            row['Fecha Subsanación'] = '';
-            row['Entrega Efectiva'] = '';
-          } else {
-            const saldoPositivo = Math.max(0, cantOrig - cantEntregada);
-            row['Diferencia Real'] = saldoPositivo;
-            row['Diferencia'] = saldoPositivo;
-            row['Estado Final Mennar'] = est;
-            row['Fecha Subsanación'] = ajuste.fechaSubsanacion || ajuste.fecha || '';
-            row['Entrega Efectiva'] = ajuste.fechaEntregaEfectiva || '';
-          }
-        }
-      }
-    }
-
-    function reaplicarSubsanacionesLocal() {
-      try {
-        const local = localStorage.getItem(CHANGES_KEY);
-        if (local) aplicarMapaAjustes(JSON.parse(local));
-      } catch (e) {}
-    }
-
-    function procesarMatrizInventarioFast(matriz) {
-      if (!matriz || matriz.length === 0) return;
-
-      const mEstandar = new Map();
-      const mNEPS = new Map();
-      const mCEDI = new Map();
-
-      let colCod = 1, colUni = 8, colBod = 13;
-      
-      for (let i = 0; i < Math.min(5, matriz.length); i++) {
-        if (!matriz[i]) continue;
-        const cols = matriz[i].map(c => norm(c));
-        const cC = cols.findIndex(c => c.includes('codigo'));
-        const cU = cols.findIndex(c => c.includes('unidades') || c.includes('stock') || c.includes('cantidad'));
-        const cB = cols.findIndex(c => c.includes('bodega'));
-        if (cC !== -1 && cU !== -1 && cB !== -1) {
-          colCod = cC; colUni = cU; colBod = cB;
-          break;
-        }
-      }
-
-      for (let i = 1; i < matriz.length; i++) {
-        const cols = matriz[i];
-        if (!cols || cols.length <= 1) continue;
-
-        const codNorm = norm(cols[colCod]);
-        const bodNorm = norm(cols[colBod]);
-        let stock = parseFloat((cols[colUni] || '0').toString().replace(',', '.')) || 0;
-        if (stock < 0) stock = 0;
-
-        if (bodNorm.includes('cedi')) {
-          mCEDI.set(codNorm, (mCEDI.get(codNorm) || 0) + stock);
-        }
-        
-        if (bodNorm.includes('pendientesneps') || bodNorm.includes('bodegapendientesneps')) {
-          mNEPS.set(codNorm, (mNEPS.get(codNorm) || 0) + stock);
         }
 
-        const key = bodNorm + '_' + codNorm;
-        mEstandar.set(key, (mEstandar.get(key) || 0) + stock);
-      }
+        async function cargarAutomaticoRepo() {
+            actualizarEstado("Buscando archivos en el repositorio...");
+            try {
+                if (rawPendientes.length === 0) {
+                    const resPen = await fetch('pendientes.csv?v=' + new Date().getTime());
+                    if (resPen.ok) {
+                        const bufferPen = await resPen.arrayBuffer();
+                        rawPendientes = procesarBinarioCSV(bufferPen);
+                        localStorage.setItem('pendientes_data', JSON.stringify(rawPendientes));
+                    }
+                }
 
-      const tiposPermitidosNEPS = ['dispmennar2', 'dispmennar4', 'dispmennar5', 'disp.mennar2', 'disp.mennar4', 'disp.mennar5'];
+                if (Object.keys(rawInventario).length === 0) {
+                    const resInv = await fetch('inventario.csv?v=' + new Date().getTime());
+                    if (resInv.ok) {
+                        const bufferInv = await resInv.arrayBuffer();
+                        rawInventario = procesarBinarioInventario(bufferInv);
+                        localStorage.setItem('inventario_data', JSON.stringify(rawInventario));
+                    }
+                }
 
-      for (let i = 0; i < datosPendientes.length; i++) {
-        const row = datosPendientes[i];
-        const bodNorm = norm(obtenerValorColumna(row, ['Bodega Encabezado', 'Bodega']));
-        const codNorm = norm(obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo']));
-        const tipoNorm = norm(obtenerValorColumna(row, ['Tipo Comprobante']));
-
-        let stockOrigen = mEstandar.get(bodNorm + '_' + codNorm) || 0;
-
-        let stockBodPendientes = 0;
-        if (tiposPermitidosNEPS.some(t => tipoNorm.includes(t))) {
-          stockBodPendientes = mNEPS.get(codNorm) || 0;
+                poblarClientesDropdown();
+                aplicarFiltros();
+                actualizarEstado("Datos listos", "green");
+            } catch (err) {
+                console.warn("Auto-load info:", err);
+                actualizarEstado("Esperando carga manual", "orange");
+            }
         }
 
-        row['Inventario Disponible en el punto de origen'] = stockOrigen;
-        row['Inventario BODEGA PENDIENTES NEPS'] = stockBodPendientes;
-        row['Inventario BODEGA PRINCIPAL CEDI'] = mCEDI.get(codNorm) || 0;
-      }
-    }
+        function procesarBinarioCSV(buffer) {
+            const workbook = XLSX.read(buffer, { type: 'array' });
+            const sheet = workbook.Sheets[workbook.SheetNames[0]];
+            const json = XLSX.utils.sheet_to_json(sheet, { defval: '' });
 
-    function obtenerValorColumna(row, posiblesNombres) {
-      if (!row) return '';
-      const keys = Object.keys(row);
-      for (let i = 0; i < posiblesNombres.length; i++) {
-        const target = norm(posiblesNombres[i]);
-        for (let j = 0; j < keys.length; j++) {
-          if (norm(keys[j]) === target) return row[keys[j]];
-        }
-      }
-      return '';
-    }
+            return json.map((row, idx) => {
+                const getVal = (keys) => {
+                    for (let k of keys) {
+                        if (row[k] !== undefined && row[k] !== '') return row[k];
+                    }
+                    return '';
+                };
 
-    function convertirFechaParaOrdenar(strFecha) {
-      if (!strFecha) return 0;
-      let limpia = strFecha.split(' ')[0].split(',')[0].trim();
-      let partes = limpia.includes('/') ? limpia.split('/') : limpia.split('-');
-      if (partes.length === 3) {
-        if (partes[0].length === 4) return new Date(partes[0], partes[1] - 1, partes[2]).getTime() || 0;
-        return new Date(partes[2], partes[1] - 1, partes[0]).getTime() || 0;
-      }
-      return new Date(limpia).getTime() || 0;
-    }
-
-    function cargarArchivoManualmente() {
-      const input = document.getElementById('csvFileInput');
-      const file = input.files[0];
-      if (!file) return alert('Por favor selecciona un archivo.');
-
-      document.getElementById('infoContador').textContent = 'Procesando archivo Pipe...';
-      const reader = new FileReader();
-
-      reader.onload = e => {
-        parsearCSVConPipe(e.target.result);
-        reaplicarSubsanacionesLocal();
-        sincronizarDesdeNubeSilencioso();
-        poblarSelectoresFiltro();
-        aplicarFiltros();
-      };
-      reader.readAsText(file);
-    }
-
-    function cargarInventarioManualmente() {
-      const input = document.getElementById('csvInvInput');
-      const file = input.files[0];
-      if (!file) return alert('Por favor selecciona un archivo de inventario.');
-
-      document.getElementById('infoContador').textContent = 'Cruzando Inventario...';
-      const reader = new FileReader();
-
-      reader.onload = e => {
-        const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
-        const matriz = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '' });
-        procesarMatrizInventarioFast(matriz);
-        aplicarFiltros();
-        alert('Stock cargado exitosamente.');
-      };
-      reader.readAsArrayBuffer(file);
-    }
-
-    function debounceFiltros() {
-      clearTimeout(timerDebounce);
-      timerDebounce = setTimeout(aplicarFiltros, 50);
-    }
-
-    function cambiarOrdenClick(tipoDefault) {
-      const select = document.getElementById('selectOrdenar');
-      if (select.value === tipoDefault) {
-        if (tipoDefault === 'fecha_asc') select.value = 'fecha_desc';
-        else if (tipoDefault === 'codigo_asc') select.value = 'codigo_desc';
-        else select.value = 'fecha_asc';
-      } else {
-        select.value = tipoDefault;
-      }
-      aplicarFiltros();
-    }
-
-    function aplicarFiltros() {
-      const busqueda = document.getElementById('searchInput').value.toLowerCase().trim();
-      const opcionesMes = Array.from(document.getElementById('selectMes').selectedOptions).map(o => o.value);
-      const opcionesBodega = Array.from(document.getElementById('selectBodega').selectedOptions).map(o => o.value);
-
-      const clienteSel = document.getElementById('selectCliente').value;
-      const inventarioSel = document.getElementById('selectInventario').value;
-      const bodPendientesSel = document.getElementById('selectBodPendientes').value;
-      const cediSel = document.getElementById('selectCedi').value;
-      const estadoSel = document.getElementById('selectEstado').value;
-      const ordenSel = document.getElementById('selectOrdenar').value;
-
-      datosFiltrados = datosPendientes.filter(row => {
-        if (busqueda) {
-          const c = obtenerValorColumna(row, ['Cedula Paciente', 'Cedula']);
-          const n = obtenerValorColumna(row, ['Nombre Paciente', 'Nombre']);
-          const d = obtenerValorColumna(row, ['Documento']);
-          const a = obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo']);
-          if (!c.toLowerCase().includes(busqueda) && !n.toLowerCase().includes(busqueda) && 
-              !d.toLowerCase().includes(busqueda) && !a.toLowerCase().includes(busqueda)) return false;
+                return {
+                    id: getVal(['Documento', 'DOCUMENTO']) + '_' + idx,
+                    documento: getVal(['Documento', 'DOCUMENTO']),
+                    fechaOrigen: getVal(['Fecha Origen Dispensacion', 'FECHA ORIGEN', 'Fecha Origen']),
+                    bodega: getVal(['Bodega Encabezado', 'BODEGA', 'Bodega']),
+                    cliente: getVal(['Razon Social Cliente', 'CLIENTE', 'Cliente']),
+                    cedula: getVal(['Cedula Paciente', 'CEDULA', 'Cedula']),
+                    paciente: getVal(['Nombre Paciente', 'PACIENTE', 'Paciente']),
+                    medicamento: getVal(['Descripcion', 'MEDICAMENTO', 'Descripcion']),
+                    codigoArticulo: getVal(['Codigo Articulo', 'CODIGO', 'Codigo Articulo']),
+                    cantidadPendiente: parseFloat(getVal(['Cantidad Autorizada', 'Diferencia', 'Unidades'])) || 0,
+                    entregaEfectiva: '',
+                    estado: 'Pendiente Activo'
+                };
+            });
         }
 
-        if (opcionesMes.length && !opcionesMes.includes(obtenerMesDeFila(row))) return false;
-        if (opcionesBodega.length && !opcionesBodega.includes(obtenerValorColumna(row, ['Bodega Encabezado', 'Bodega']))) return false;
-        if (clienteSel && obtenerValorColumna(row, ['Razon Social Cliente', 'Cliente']) !== clienteSel) return false;
+        function procesarBinarioInventario(buffer) {
+            const workbook = XLSX.read(buffer, { type: 'array' });
+            const sheet = workbook.Sheets[workbook.SheetNames[0]];
+            const json = XLSX.utils.sheet_to_json(sheet, { defval: '' });
 
-        const st = parseFloat(row['Inventario Disponible en el punto de origen'] || 0);
-        if (inventarioSel === 'con_stock' && st <= 0) return false;
-        if (inventarioSel === 'sin_stock' && st > 0) return false;
+            let invMap = {};
+            json.forEach(row => {
+                const sku = String(row['Codigo Articulo'] || row['CODIGO'] || '').trim();
+                const unidad = String(row['Unidad'] || row['UNIDAD'] || row['Bodega'] || '').trim();
+                const stock = parseFloat(row['Stock'] || row['STOCK'] || row['Cantidad'] || 0) || 0;
 
-        const stBodPend = parseFloat(row['Inventario BODEGA PENDIENTES NEPS'] || 0);
-        if (bodPendientesSel === 'con_stock' && stBodPend <= 0) return false;
-        if (bodPendientesSel === 'sin_stock' && stBodPend > 0) return false;
-
-        const stCedi = parseFloat(row['Inventario BODEGA PRINCIPAL CEDI'] || 0);
-        if (cediSel === 'con_stock' && stCedi <= 0) return false;
-        if (cediSel === 'sin_stock' && stCedi > 0) return false;
-
-        const est = row['Estado Final Mennar'] || 'Pendiente Activo';
-        if (estadoSel) {
-          if (estadoSel === 'Pendiente' && !est.toLowerCase().includes('pendiente')) return false;
-          if (estadoSel !== 'Pendiente' && est.toLowerCase() !== estadoSel.toLowerCase()) return false;
+                if (sku) {
+                    if (!invMap[sku]) invMap[sku] = {};
+                    invMap[sku][unidad] = (invMap[sku][unidad] || 0) + stock;
+                }
+            });
+            return invMap;
         }
 
-        return true;
-      });
-
-      datosFiltrados.sort((a, b) => {
-        if (ordenSel === 'fecha_asc' || ordenSel === 'fecha_desc') {
-          const fechaA = convertirFechaParaOrdenar(obtenerValorColumna(a, ['Fecha Origen Dispensacion', 'Fecha Origen']));
-          const fechaB = convertirFechaParaOrdenar(obtenerValorColumna(b, ['Fecha Origen Dispensacion', 'Fecha Origen']));
-          return ordenSel === 'fecha_asc' ? fechaA - fechaB : fechaB - fechaA;
-        } 
-        else if (ordenSel === 'codigo_asc' || ordenSel === 'codigo_desc') {
-          const codA = (obtenerValorColumna(a, ['Codigo Articulo', 'Código Artículo']) || '').toString();
-          const codB = (obtenerValorColumna(b, ['Codigo Articulo', 'Código Artículo']) || '').toString();
-          return ordenSel === 'codigo_asc' ? codA.localeCompare(codB) : codB.localeCompare(codA);
-        } 
-        else if (ordenSel === 'mes_asc') {
-          const mesA = obtenerMesDeFila(a).toLowerCase().trim();
-          const mesB = obtenerMesDeFila(b).toLowerCase().trim();
-          return (ORDEN_MESES[mesA] || 99) - (ORDEN_MESES[mesB] || 99);
-        }
-        return 0;
-      });
-
-      paginaActual = 1;
-      renderizarTabla();
-    }
-
-    function renderizarTabla() {
-      const tbody = document.querySelector('#tablaPendientes tbody');
-      tbody.innerHTML = '';
-
-      const totalPaginas = Math.ceil(datosFiltrados.length / registrosPorPagina) || 1;
-      document.getElementById('infoContador').textContent = `Mostrando: ${datosFiltrados.length} de ${datosPendientes.length} registros`;
-      document.getElementById('infoPagina').textContent = `Página ${paginaActual} de ${totalPaginas}`;
-
-      const inicio = (paginaActual - 1) * registrosPorPagina;
-      const paginaDatos = datosFiltrados.slice(inicio, inicio + registrosPorPagina);
-      const frag = document.createDocumentFragment();
-
-      paginaDatos.forEach(row => {
-        const indexOriginal = datosPendientes.indexOf(row);
-        const cantidadPendiente = Math.abs(parseInt(obtenerValorColumna(row, ['Diferencia Real', 'Diferencia', 'Cant. Pendiente'])) || 0);
-        const cuotaRecaudo = obtenerValorColumna(row, ['Cuota Recaudo', 'Cuota Recaudo Contrato']) || '0';
-        const estadoFinal = row['Estado Final Mennar'] || 'Pendiente Activo';
-
-        let badgeClass = 'badge-pending';
-        if (estadoFinal === 'Subsanado') badgeClass = 'badge-done';
-        else if (estadoFinal === 'Pendiente Parcial') badgeClass = 'badge-partial';
-
-        let fechaOrigen = (obtenerValorColumna(row, ['Fecha Origen Dispensacion', 'Fecha Origen']) || '').split(' ')[0];
-        let fechaSubsanacion = estadoFinal !== 'Pendiente Activo' ? (row['Fecha Subsanación'] || '-') : '-';
-        let entregaEfectiva = estadoFinal !== 'Pendiente Activo' ? (row['Entrega Efectiva'] || '-') : '-';
-
-        const stockOrigenNum = parseFloat(row['Inventario Disponible en el punto de origen'] || 0);
-        const claseStockOrigen = stockOrigenNum > 0 ? 'stock-rojo' : '';
-
-        const mesText = obtenerMesDeFila(row);
-
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td>${mesText}</td>
-          <td>${obtenerValorColumna(row, ['Documento'])}</td>
-          <td>${fechaOrigen}</td>
-          <td>${obtenerValorColumna(row, ['Bodega Encabezado', 'Bodega'])}</td>
-          <td>${obtenerValorColumna(row, ['Razon Social Cliente', 'Cliente'])}</td>
-          <td>${obtenerValorColumna(row, ['Cedula Paciente', 'Cedula'])}</td>
-          <td>${obtenerValorColumna(row, ['Nombre Paciente', 'Nombre'])}</td>
-          <td>${obtenerValorColumna(row, ['Descripcion', 'Descripción'])}</td>
-          <td>${obtenerValorColumna(row, ['Codigo Articulo', 'Código Artículo'])}</td>
-          <td>${obtenerValorColumna(row, ['Codigo Contrato', 'Contrato'])}</td>
-          <td><strong>${cantidadPendiente}</strong></td>
-          <td>${cuotaRecaudo}</td>
-          <td class="${claseStockOrigen}"><strong>${stockOrigenNum}</strong></td>
-          <td><strong>${row['Inventario BODEGA PENDIENTES NEPS'] || 0}</strong></td>
-          <td><strong>${row['Inventario BODEGA PRINCIPAL CEDI'] || 0}</strong></td>
-          <td><strong>${fechaSubsanacion}</strong></td>
-          <td><strong>${entregaEfectiva}</strong></td>
-          <td><span class="badge ${badgeClass}">${estadoFinal}</span></td>
-          <td><button class="btn-subsanar" onclick="subsanar(${indexOriginal})">${estadoFinal.includes('Pendiente') ? 'Subsanar' : 'Ajustar'}</button></td>
-        `;
-        frag.appendChild(tr);
-      });
-
-      tbody.appendChild(frag);
-    }
-
-    function cambiarPagina(dir) {
-      const total = Math.ceil(datosFiltrados.length / registrosPorPagina) || 1;
-      paginaActual = Math.max(1, Math.min(total, paginaActual + dir));
-      renderizarTabla();
-    }
-
-    function poblarSelectoresFiltro() {
-      const sMes = document.getElementById('selectMes');
-      const sBod = document.getElementById('selectBodega');
-      const sCli = document.getElementById('selectCliente');
-
-      const meses = [...new Set(datosPendientes.map(i => obtenerMesDeFila(i)).filter(Boolean))].sort((a, b) => (ORDEN_MESES[a.toLowerCase()] || 99) - (ORDEN_MESES[b.toLowerCase()] || 99));
-      const bodegas = [...new Set(datosPendientes.map(i => obtenerValorColumna(i, ['Bodega Encabezado', 'Bodega'])).filter(Boolean))].sort();
-      const clientes = [...new Set(datosPendientes.map(i => obtenerValorColumna(i, ['Razon Social Cliente', 'Cliente'])).filter(Boolean))].sort();
-
-      sMes.innerHTML = meses.map(m => `<option value="${m}">${m}</option>`).join('');
-      sBod.innerHTML = bodegas.map(b => `<option value="${b}">${b}</option>`).join('');
-      sCli.innerHTML = '<option value="">-- Todos los Clientes --</option>' + clientes.map(c => `<option value="${c}">${c}</option>`).join('');
-    }
-
-    function subsanar(index) {
-      const item = datosPendientes[index];
-      const pendienteFilaActual = Math.abs(parseInt(obtenerValorColumna(item, ['Diferencia Real', 'Diferencia', 'Cant. Pendiente'])) || 0);
-      const cantOriginal = Math.abs(item['_CantOriginal'] || pendienteFilaActual);
-      const descripcion = obtenerValorColumna(item, ['Descripcion', 'Descripción']);
-      const codigoArt = obtenerValorColumna(item, ['Codigo Articulo', 'Código Artículo']);
-      const bodegaPunto = obtenerValorColumna(item, ['Bodega Encabezado', 'Bodega']);
-
-      const stockOrigen = parseFloat(item['Inventario Disponible en el punto de origen'] || 0);
-      const stockPendientes = parseFloat(item['Inventario BODEGA PENDIENTES NEPS'] || 0);
-      const stockDisponible = Math.max(stockOrigen, stockPendientes);
-
-      let sumaTotalPendientesPunto = 0;
-      let listaDispensasPunto = [];
-
-      datosPendientes.forEach(r => {
-        const rBodega = obtenerValorColumna(r, ['Bodega Encabezado', 'Bodega']);
-        const rCodigo = obtenerValorColumna(r, ['Codigo Articulo', 'Código Artículo']);
-        const rEstado = r['Estado Final Mennar'] || 'Pendiente Activo';
-        const rCantPend = Math.abs(parseInt(obtenerValorColumna(r, ['Diferencia Real', 'Diferencia', 'Cant. Pendiente'])) || 0);
-
-        if (rBodega === bodegaPunto && rCodigo === codigoArt && rEstado.includes('Pendiente') && rCantPend > 0) {
-          sumaTotalPendientesPunto += rCantPend;
-          listaDispensasPunto.push(rCantPend);
-        }
-      });
-
-      const totalDispensasCount = listaDispensasPunto.length;
-      const cantidadSugerida = Math.min(pendienteFilaActual, stockDisponible);
-
-      const entrada = prompt(
-        `ANÁLISIS DE PENDIENTES DEL PUNTO Y MEDICAMENTO:\n` +
-        `Punto: ${bodegaPunto} | Código: ${codigoArt}\n` +
-        `Medicamento: ${descripcion}\n` +
-        `--------------------------------------------------\n` +
-        `• TOTAL PENDIENTES EN ESTE PUNTO: ${sumaTotalPendientesPunto} un. (${totalDispensasCount} recetas)\n` +
-        `• INVENTARIO DISPONIBLE: ${stockDisponible} un.\n` +
-        `--------------------------------------------------\n` +
-        `• Pendiente de ESTE Paciente: ${pendienteFilaActual} un.\n\n` +
-        `Ingrese Cantidad a Subsanar (sugerido: ${cantidadSugerida}):`,
-        cantidadSugerida
-      );
-
-      if (entrada !== null && entrada.trim() !== '' && !isNaN(entrada)) {
-        const cantidadIngresada = parseInt(entrada);
-        const doc = obtenerValorColumna(item, ['Documento']);
-        const idUnico = norm(doc + '_' + codigoArt);
-
-        let cambiosExistentes = {};
-        try { cambiosExistentes = JSON.parse(localStorage.getItem(CHANGES_KEY)) || {}; } catch(e){}
-
-        if (cantidadIngresada <= 0) {
-          item['Diferencia Real'] = cantOriginal;
-          item['Diferencia'] = cantOriginal;
-          item['Estado Final Mennar'] = 'Pendiente Activo';
-          item['Fecha Subsanación'] = '';
-          item['Entrega Efectiva'] = '';
-          delete cambiosExistentes[idUnico];
-          localStorage.setItem(CHANGES_KEY, JSON.stringify(cambiosExistentes));
-          enviarCambioANubeAsync({ idUnico, doc, codArt: codigoArt, est: 'Pendiente Activo', accion: 'borrar' });
-          aplicarFiltros();
-          return;
+        function poblarClientesDropdown() {
+            const select = document.getElementById('filterCliente');
+            const clientes = [...new Set(rawPendientes.map(p => p.cliente).filter(Boolean))].sort();
+            
+            select.innerHTML = '<option value="">-- Todos los Clientes --</option>';
+            clientes.forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c;
+                opt.textContent = c;
+                select.appendChild(opt);
+            });
         }
 
-        const fechaPrev = item['Entrega Efectiva'] || '';
-        let inputFecha = prompt(`[OPCIONAL] Ingrese Fecha de Entrega Efectiva (AAAA-MM-DD):`, fechaPrev);
-        let fechaEfectiva = (inputFecha !== null) ? inputFecha.trim() : "";
+        function aplicarFiltros() {
+            const search = document.getElementById('filterSearch').value.toLowerCase();
+            const order = document.getElementById('filterOrder').value;
+            const cliente = document.getElementById('filterCliente').value;
+            const estado = document.getElementById('filterEstado').value;
+            const invOrigen = document.getElementById('filterInvOrigen').value;
+            const invNeps = document.getElementById('filterInvNeps').value;
+            const invCedi = document.getElementById('filterInvCedi').value;
 
-        const saldo = Math.max(0, cantOriginal - cantidadIngresada);
-        item['Diferencia Real'] = saldo;
-        item['Diferencia'] = saldo;
-        let estadoFinal = saldo === 0 ? 'Subsanado' : (cantidadIngresada > 0 ? 'Pendiente Parcial' : 'Pendiente Activo');
-        
-        const fechaRegistroSys = new Date().toISOString().replace('T', ' ').substring(0, 10);
+            filteredPendientes = rawPendientes.filter(item => {
+                if (search) {
+                    const matchText = `${item.documento} ${item.paciente} ${item.cedula} ${item.codigoArticulo} ${item.medicamento}`.toLowerCase();
+                    if (!matchText.includes(search)) return false;
+                }
 
-        item['Fecha Subsanación'] = fechaRegistroSys;
-        item['Estado Final Mennar'] = estadoFinal;
-        item['Entrega Efectiva'] = fechaEfectiva;
+                if (cliente && item.cliente !== cliente) return false;
+                if (estado && item.estado !== estado) return false;
 
-        const payload = {
-          idUnico, doc,
-          mes: obtenerMesDeFila(item),
-          cliente: obtenerValorColumna(item, ['Razon Social Cliente', 'Cliente']),
-          bodega: bodegaPunto,
-          siglaCliente: obtenerValorColumna(item, ['Sigla Comercial Cliente']),
-          cedula: obtenerValorColumna(item, ['Cedula Paciente']),
-          paciente: obtenerValorColumna(item, ['Nombre Paciente']),
-          medicamento: descripcion, 
-          codArt: codigoArt,
-          codContrato: obtenerValorColumna(item, ['Codigo Contrato', 'Contrato']),
-          cantEntregada: cantidadIngresada,
-          cuotaRecaudo: obtenerValorColumna(item, ['Cuota Recaudo', 'Cuota Recaudo Contrato']) || '0',
-          fechaSubsanacion: fechaRegistroSys,
-          fechaEntregaEfectiva: fechaEfectiva,
-          est: estadoFinal, 
-          accion: 'guardar'
-        };
+                const stockOrigen = obtenerStock(item.codigoArticulo, item.bodega);
+                const stockNeps = obtenerStock(item.codigoArticulo, "BODEGA PENDIENTES NEPS");
+                const stockCedi = obtenerStock(item.codigoArticulo, BODEGA_CEDI);
 
-        cambiosExistentes[idUnico] = payload;
-        localStorage.setItem(CHANGES_KEY, JSON.stringify(cambiosExistentes));
-        
-        enviarCambioANubeAsync(payload);
-        aplicarFiltros();
-      }
-    }
+                if (invOrigen === 'con_stock' && stockOrigen <= 0) return false;
+                if (invOrigen === 'sin_stock' && stockOrigen > 0) return false;
 
-    function enviarCambioANubeAsync(payload) {
-      if (!WEB_APP_URL) return;
-      fetch(WEB_APP_URL, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      }).catch(e => console.error('Error al guardar en nube:', e));
-    }
+                if (invNeps === 'con_stock' && stockNeps <= 0) return false;
+                if (invNeps === 'sin_stock' && stockNeps > 0) return false;
 
-    function exportarCSV(soloFiltrados) {
-      const dataset = soloFiltrados ? datosFiltrados : datosPendientes;
-      if (!dataset.length) return alert('No hay datos para exportar.');
+                if (invCedi === 'con_stock' && stockCedi <= 0) return false;
+                if (invCedi === 'sin_stock' && stockCedi > 0) return false;
 
-      let csvText = COLUMNAS_DESCARGA.join(';') + '\n';
-      
-      dataset.forEach(row => {
-        const filaFormateada = COLUMNAS_DESCARGA.map(col => {
-          let val = obtenerValorColumna(row, [col]);
-          
-          if (col === 'Inventario Disponible en el punto de origen') val = row['Inventario Disponible en el punto de origen'] || 0;
-          if (col === 'Inventario BODEGA PENDIENTES NEPS') val = row['Inventario BODEGA PENDIENTES NEPS'] || 0;
-          if (col === 'Inventario BODEGA PRINCIPAL CEDI') val = row['Inventario BODEGA PRINCIPAL CEDI'] || 0;
-          if (col === 'Fecha Subsanación') val = row['Fecha Subsanación'] || '';
-          if (col === 'Entrega Efectiva') val = row['Entrega Efectiva'] || '';
-          if (col === 'Estado Final Mennar') val = row['Estado Final Mennar'] || 'Pendiente Activo';
-          if (col === 'Diferencia') val = row['Diferencia'] !== undefined ? row['Diferencia'] : obtenerValorColumna(row, ['Diferencia Real']);
+                return true;
+            });
 
-          return `"${(val !== undefined && val !== null ? val : '').toString().replace(/"/g, '""')}"`;
-        });
-        csvText += filaFormateada.join(';') + '\n';
-      });
+            filteredPendientes.sort((a, b) => {
+                if (order === 'fecha_asc') return new Date(a.fechaOrigen) - new Date(b.fechaOrigen);
+                if (order === 'fecha_desc') return new Date(b.fechaOrigen) - new Date(a.fechaOrigen);
+                if (order === 'code_asc') return a.codigoArticulo.localeCompare(b.codigoArticulo);
+                if (order === 'code_desc') return b.codigoArticulo.localeCompare(a.codigoArticulo);
+                return 0;
+            });
 
-      const blob = new Blob(['\uFEFF' + csvText], { type: 'text/csv;charset=utf-8;' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `Pendientes_Filtrados_Export_${Date.now()}.csv`;
-      a.click();
-    }
+            currentPage = 1;
+            renderTabla();
+            actualizarKPIs();
+        }
 
-    function limpiarDatos() {
-      if (confirm('¿Restablecer datos locales y memoria de trabajo?')) {
-        localStorage.clear();
-        location.reload();
-      }
-    }
-  </script>
+        function obtenerStock(sku, unidad) {
+            if (!rawInventario[sku]) return 0;
+            return rawInventario[sku][unidad] || 0;
+        }
+
+        function renderTabla() {
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = '';
+
+            const start = (currentPage - 1) * pageSize;
+            const end = start + pageSize;
+            const pageData = filteredPendientes.slice(start, end);
+
+            if (pageData.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="14" class="text-center py-8 text-gray-500">No se encontraron registros con los filtros aplicados.</td></tr>`;
+                document.getElementById('counterInfo').textContent = "0 registros";
+                document.getElementById('pageInfo').textContent = "Página 1 de 1";
+                return;
+            }
+
+            pageData.forEach(item => {
+                const stockOrigen = obtenerStock(item.codigoArticulo, item.bodega);
+                const stockNeps = obtenerStock(item.codigoArticulo, "BODEGA PENDIENTES NEPS");
+                const stockCedi = obtenerStock(item.codigoArticulo, BODEGA_CEDI);
+
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-gray-50 transition border-b";
+
+                tr.innerHTML = `
+                    <td class="p-2 border-r font-medium">${item.documento}</td>
+                    <td class="p-2 border-r whitespace-nowrap">${item.fechaOrigen}</td>
+                    <td class="p-2 border-r">${item.bodega}</td>
+                    <td class="p-2 border-r max-w-[150px] truncate" title="${item.cliente}">${item.cliente}</td>
+                    <td class="p-2 border-r font-semibold">${item.paciente}</td>
+                    <td class="p-2 border-r max-w-[200px] truncate" title="${item.medicamento}">${item.medicamento}</td>
+                    <td class="p-2 border-r text-center font-mono">${item.codigoArticulo}</td>
+                    <td class="p-2 border-r text-center font-bold text-red-600">${item.cantidadPendiente}</td>
+                    <td class="p-2 border-r text-center font-bold ${stockOrigen > 0 ? 'text-green-600 bg-green-50' : 'text-gray-400'}">${stockOrigen}</td>
+                    <td class="p-2 border-r text-center font-bold ${stockNeps > 0 ? 'text-green-600 bg-green-50' : 'text-gray-400'}">${stockNeps}</td>
+                    <td class="p-2 border-r text-center font-bold ${stockCedi > 0 ? 'text-green-600 bg-green-50' : 'text-gray-400'}">${stockCedi}</td>
+                    <td class="p-2 border-r text-center">
+                        <input type="date" value="${item.entregaEfectiva}" onchange="actualizarFechaEfectiva('${item.id}', this.value)" class="border rounded px-1 py-0.5 text-xs">
+                    </td>
+                    <td class="p-2 border-r text-center">
+                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            item.estado === 'Subsanado' ? 'bg-green-100 text-green-800' :
+                            item.estado === 'Pendiente Parcial' ? 'bg-yellow-100 text-yellow-800' :
+                            'bg-red-100 text-red-800'
+                        }">
+                            ${item.estado}
+                        </span>
+                    </td>
+                    <td class="p-2 text-center">
+                        <button onclick="cambiarEstado('${item.id}')" class="bg-blue-600 text-white px-2 py-1 rounded text-[10px] hover:bg-blue-700">
+                            Cambiar
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            const totalPages = Math.ceil(filteredPendientes.length / pageSize) || 1;
+            document.getElementById('counterInfo').textContent = `Mostrando ${start + 1} - ${Math.min(end, filteredPendientes.length)} de ${filteredPendientes.length} registros`;
+            document.getElementById('pageInfo').textContent = `Página ${currentPage} de ${totalPages}`;
+            document.getElementById('btnPrev').disabled = currentPage === 1;
+            document.getElementById('btnNext').disabled = currentPage === totalPages;
+        }
+
+        function cambiarPagina(delta) {
+            currentPage += delta;
+            renderTabla();
+        }
+
+        function actualizarFechaEfectiva(id, value) {
+            const item = rawPendientes.find(p => p.id === id);
+            if (item) {
+                item.entregaEfectiva = value;
+                localStorage.setItem('pendientes_data', JSON.stringify(rawPendientes));
+            }
+        }
+
+        function cambiarEstado(id) {
+            const item = rawPendientes.find(p => p.id === id);
+            if (item) {
+                if (item.estado === 'Pendiente Activo') item.estado = 'Pendiente Parcial';
+                else if (item.estado === 'Pendiente Parcial') item.estado = 'Subsanado';
+                else item.estado = 'Pendiente Activo';
+
+                localStorage.setItem('pendientes_data', JSON.stringify(rawPendientes));
+                aplicarFiltros();
+            }
+        }
+
+        function actualizarKPIs() {
+            let act = 0, parc = 0, sub = 0;
+            rawPendientes.forEach(p => {
+                if (p.estado === 'Subsanado') sub++;
+                else if (p.estado === 'Pendiente Parcial') parc++;
+                else act++;
+            });
+            document.getElementById('kpiActivos').textContent = act;
+            document.getElementById('kpiParciales').textContent = parc;
+            document.getElementById('kpiSubsanados').textContent = sub;
+        }
+
+        function actualizarEstado(msg, color = 'blue') {
+            const el = document.getElementById('statusIndicator');
+            el.textContent = msg;
+            el.className = `font-semibold text-${color}-600`;
+        }
+
+        async function cargarPendientesManual() {
+            const fileInput = document.getElementById('filePendientes');
+            if (!fileInput.files[0]) return alert("Selecciona un archivo primero.");
+            const buffer = await fileInput.files[0].arrayBuffer();
+            rawPendientes = procesarBinarioCSV(buffer);
+            localStorage.setItem('pendientes_data', JSON.stringify(rawPendientes));
+            poblarClientesDropdown();
+            aplicarFiltros();
+            alert("Pendientes procesados con éxito.");
+        }
+
+        async function cargarInventarioManual() {
+            const fileInput = document.getElementById('fileInventario');
+            if (!fileInput.files[0]) return alert("Selecciona un archivo primero.");
+            const buffer = await fileInput.files[0].arrayBuffer();
+            rawInventario = procesarBinarioInventario(buffer);
+            localStorage.setItem('inventario_data', JSON.stringify(rawInventario));
+            aplicarFiltros();
+            alert("Inventario cargado con éxito.");
+        }
+
+        function exportarCSVCompleto() {
+            if (rawPendientes.length === 0) return alert("No hay datos para exportar.");
+            const ws = XLSX.utils.json_to_sheet(rawPendientes);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Pendientes");
+            XLSX.writeFile(wb, "pendientes_completo_export.xlsx");
+        }
+
+        function exportarFiltroActual() {
+            if (filteredPendientes.length === 0) return alert("No hay datos filtrados para exportar.");
+            const ws = XLSX.utils.json_to_sheet(filteredPendientes);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Filtro");
+            XLSX.writeFile(wb, "pendientes_filtrados.xlsx");
+        }
+
+        function restablecerDatos() {
+            if (confirm("¿Estás seguro de restablecer todos los datos locales?")) {
+                localStorage.removeItem('pendientes_data');
+                localStorage.removeItem('inventario_data');
+                rawPendientes = [];
+                rawInventario = {};
+                aplicarFiltros();
+                actualizarEstado("Datos restablecidos", "red");
+            }
+        }
+    </script>
 </body>
 </html>
