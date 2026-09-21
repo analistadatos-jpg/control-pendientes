@@ -13,7 +13,7 @@
 </head>
 <body class="bg-gray-100 text-gray-800 font-sans min-h-screen">
 
-    <!-- Navbar -->
+    <!-- Header / Navbar -->
     <header class="bg-blue-800 text-white shadow-lg py-4 px-6 mb-6">
         <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
             <h1 class="text-xl md:text-2xl font-bold tracking-wide flex items-center gap-2">
@@ -97,7 +97,7 @@
                 <!-- Búsqueda General -->
                 <div>
                     <label class="block font-medium text-gray-600 mb-1">Búsqueda General:</label>
-                    <input type="text" id="filterSearch" oninput="aplicarFiltros()" placeholder="Buscar documento, paciente, código..." class="w-full border rounded px-2.5 py-1.5 focus:ring-2 focus:ring-blue-500 outline-none">
+                    <input type="text" id="filterSearch" oninput="aplicarFiltros()" placeholder="Buscar documento, paciente, cédula, código..." class="w-full border rounded px-2.5 py-1.5 focus:ring-2 focus:ring-blue-500 outline-none">
                 </div>
 
                 <!-- Ordenar por -->
@@ -184,6 +184,7 @@
                             <th class="p-2 border-r border-gray-700">Fecha Origen</th>
                             <th class="p-2 border-r border-gray-700">Bodega</th>
                             <th class="p-2 border-r border-gray-700">Cliente / EPS</th>
+                            <th class="p-2 border-r border-gray-700 font-bold bg-blue-900">Cédula</th>
                             <th class="p-2 border-r border-gray-700">Paciente</th>
                             <th class="p-2 border-r border-gray-700">Medicamento</th>
                             <th class="p-2 border-r border-gray-700 text-center">Código Art.</th>
@@ -275,10 +276,22 @@
             }
         }
 
+        function formatearFechaExcel(valor) {
+            if (!valor) return '';
+            if (typeof valor === 'number' && valor > 30000) {
+                const date = new Date(Math.round((valor - 25569) * 86400 * 1000));
+                const day = String(date.getUTCDate()).padStart(2, '0');
+                const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+                const year = date.getUTCFullYear();
+                return `${day}/${month}/${year}`;
+            }
+            return String(valor).trim();
+        }
+
         function procesarBinarioCSV(buffer) {
-            const workbook = XLSX.read(buffer, { type: 'array' });
+            const workbook = XLSX.read(buffer, { type: 'array', cellDates: true, raw: false });
             const sheet = workbook.Sheets[workbook.SheetNames[0]];
-            const json = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+            const json = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false });
 
             return json.map((row, idx) => {
                 const getVal = (keys) => {
@@ -288,18 +301,21 @@
                     return '';
                 };
 
+                const fechaBruta = getVal(['Fecha Origen Dispensacion', 'FECHA ORIGEN', 'Fecha Origen']);
+
                 return {
                     id: getVal(['Documento', 'DOCUMENTO']) + '_' + idx,
                     documento: getVal(['Documento', 'DOCUMENTO']),
-                    fechaOrigen: getVal(['Fecha Origen Dispensacion', 'FECHA ORIGEN', 'Fecha Origen']),
+                    fechaOrigen: formatearFechaExcel(fechaBruta),
                     bodega: getVal(['Bodega Encabezado', 'BODEGA', 'Bodega']),
                     cliente: getVal(['Razon Social Cliente', 'CLIENTE', 'Cliente']),
-                    cedula: getVal(['Cedula Paciente', 'CEDULA', 'Cedula']),
+                    cedula: getVal(['Cedula Paciente', 'CEDULA', 'Cedula Paciente', 'Cedula']),
                     paciente: getVal(['Nombre Paciente', 'PACIENTE', 'Paciente']),
                     medicamento: getVal(['Descripcion', 'MEDICAMENTO', 'Descripcion']),
                     codigoArticulo: getVal(['Codigo Articulo', 'CODIGO', 'Codigo Articulo']),
                     cantidadPendiente: parseFloat(getVal(['Cantidad Autorizada', 'Diferencia', 'Unidades'])) || 0,
-                    entregaEfectiva: '',
+                    fechaSubsanacion: '', 
+                    entregaEfectiva: '',  
                     estado: 'Pendiente Activo'
                 };
             });
@@ -398,7 +414,7 @@
             const pageData = filteredPendientes.slice(start, end);
 
             if (pageData.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="14" class="text-center py-8 text-gray-500">No se encontraron registros con los filtros aplicados.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="15" class="text-center py-8 text-gray-500">No se encontraron registros con los filtros aplicados.</td></tr>`;
                 document.getElementById('counterInfo').textContent = "0 registros";
                 document.getElementById('pageInfo').textContent = "Página 1 de 1";
                 return;
@@ -417,6 +433,7 @@
                     <td class="p-2 border-r whitespace-nowrap">${item.fechaOrigen}</td>
                     <td class="p-2 border-r">${item.bodega}</td>
                     <td class="p-2 border-r max-w-[150px] truncate" title="${item.cliente}">${item.cliente}</td>
+                    <td class="p-2 border-r font-mono font-semibold text-blue-900">${item.cedula}</td>
                     <td class="p-2 border-r font-semibold">${item.paciente}</td>
                     <td class="p-2 border-r max-w-[200px] truncate" title="${item.medicamento}">${item.medicamento}</td>
                     <td class="p-2 border-r text-center font-mono">${item.codigoArticulo}</td>
@@ -468,9 +485,18 @@
         function cambiarEstado(id) {
             const item = rawPendientes.find(p => p.id === id);
             if (item) {
-                if (item.estado === 'Pendiente Activo') item.estado = 'Pendiente Parcial';
-                else if (item.estado === 'Pendiente Parcial') item.estado = 'Subsanado';
-                else item.estado = 'Pendiente Activo';
+                const hoy = new Date().toISOString().split('T')[0];
+
+                if (item.estado === 'Pendiente Activo') {
+                    item.estado = 'Pendiente Parcial';
+                    item.fechaSubsanacion = hoy;
+                } else if (item.estado === 'Pendiente Parcial') {
+                    item.estado = 'Subsanado';
+                    item.fechaSubsanacion = hoy;
+                } else {
+                    item.estado = 'Pendiente Activo';
+                    item.fechaSubsanacion = '';
+                }
 
                 localStorage.setItem('pendientes_data', JSON.stringify(rawPendientes));
                 aplicarFiltros();
