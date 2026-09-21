@@ -32,9 +32,9 @@
   <div class="card-panel">
     <div class="row g-2 align-items-center">
       <div class="col-md-5">
-        <label class="form-label mb-1"><strong>1. Cargar Archivo de Pendientes (CSV / Excel / TXT):</strong></label>
+        <label class="form-label mb-1"><strong>1. Cargar Archivo de Pendientes (Delimitado por Pipe |):</strong></label>
         <div class="input-group input-group-sm">
-          <input type="file" id="csvFileInput" class="form-control" accept=".csv, .xlsx, .xls, .txt">
+          <input type="file" id="csvFileInput" class="form-control" accept=".csv, .txt, .xlsx, .xls">
           <button class="btn btn-primary" onclick="cargarArchivoManualmente()">Procesar</button>
         </div>
       </div>
@@ -48,7 +48,7 @@
       </div>
 
       <div class="col-md-2 d-flex flex-column gap-1 pt-3">
-        <button class="btn btn-success btn-sm w-100" onclick="exportarCSV(false)">⬇ Exportar CSV Completo (32 Campos)</button>
+        <button class="btn btn-success btn-sm w-100" onclick="exportarCSV(false)">⬇ Exportar CSV Filtrado</button>
         <button class="btn btn-danger btn-sm w-100" onclick="limpiarDatos()">🗑 Restablecer / Borrar Datos</button>
       </div>
     </div>
@@ -129,11 +129,11 @@
     </div>
   </div>
 
-  <!-- Barra de estado y exportación rápida -->
+  <!-- Barra de estado -->
   <div class="d-flex justify-content-between align-items-center mb-2">
     <div>
       <strong id="infoContador" class="text-secondary">Iniciando aplicación...</strong>
-      <button class="btn btn-primary btn-sm ms-2" onclick="exportarCSV(true)">📥 Descargar Filtro Actual (CSV/Excel)</button>
+      <button class="btn btn-primary btn-sm ms-2" onclick="exportarCSV(true)">📥 Descargar Filtro Actual (CSV)</button>
     </div>
     <div class="d-flex gap-2 align-items-center">
       <button class="btn btn-outline-secondary btn-sm" onclick="cambiarPagina(-1)">⬅ Anterior</button>
@@ -180,15 +180,16 @@
     const ARCHIVO_PENDIENTES = 'pendientes.csv';
     const ARCHIVO_INVENTARIO = 'inventario.csv';
 
-    const COLUMNAS_SOLICITADAS = [
-      'Tipo Comprobante', 'Documento', 'Fecha Origen Dispensacion', 'Razon Social Cliente',
-      'Sigla Comercial Cliente', 'Cedula Paciente', 'Nombre Paciente', 'Edad paciente',
-      'Bodega Encabezado', 'Tipo Servicio', 'DOMICILIO', 'CODIGO CIE 10', 'DESCRIPCION CIE 10',
-      'COHORTE', 'Contrato', 'Codigo Articulo', 'Descripcion', 'Presentacion', 'Grupo',
+    // Lista de las columnas exactas solicitadas para descargar
+    const COLUMNAS_DESCARGA = [
+      'Tipo Comprobante', 'Documento', 'Fecha Origen Dispensacion', 'Documento Cliente',
+      'Razon Social Cliente', 'Sigla Comercial Cliente', 'Documento Paciente', 'Cedula Paciente',
+      'Nombre Paciente', 'Edad paciente', 'Bodega Encabezado', 'Tipo Servicio', 'DOMICILIO',
+      'Cuota Recaudo', 'Codigo Articulo', 'Descripcion', 'Presentacion', 'Grupo',
       'Unidades', 'Cantidad Autorizada', 'Cantidad Prescrita', 'Diferencia',
-      'Municipio Tipo Comprobante', 'Usuario Creacion', 'Codigo Contrato', 'Cuota Recaudo',
+      'Municipio Tipo Comprobante', 'Usuario Creacion',
       'Inventario Disponible en el punto de origen', 'Inventario BODEGA PENDIENTES NEPS',
-      'Inventario BODEGA PRINCIPAL CEDI', 'Fecha Subsanación', 'Entrega Efectiva'
+      'Inventario BODEGA PRINCIPAL CEDI', 'Fecha Subsanación', 'Entrega Efectiva', 'Estado Final Mennar'
     ];
 
     let datosPendientes = [];
@@ -211,8 +212,13 @@
       return res;
     }
 
+    function limpiarEspacios(texto) {
+      if (!texto) return '';
+      return texto.toString().replace(/[\r\n]+/g, ' ').trim();
+    }
+
     function obtenerMesDeFila(row) {
-      let mesText = obtenerValorColumna(row, ['Mes_Dispensacion', 'Mes Dispensacion', 'Mes Dispensación']);
+      let mesText = obtenerValorColumna(row, ['Mes_Dispensacion', 'Mes Dispensacion']);
       if (!mesText) {
         const fechaOrigen = (obtenerValorColumna(row, ['Fecha Origen Dispensacion', 'Fecha Origen']) || '').split(' ')[0];
         if (fechaOrigen) {
@@ -238,10 +244,8 @@
         
         const respPend = await fetch('./' + encodeURIComponent(ARCHIVO_PENDIENTES) + timestamp);
         if (respPend.ok) {
-          const buffer = await respPend.arrayBuffer();
-          const wb = XLSX.read(new Uint8Array(buffer), { type: 'array' });
-          const matriz = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '' });
-          parsearMatrizDirecta(matriz);
+          const texto = await respPend.text();
+          parsearCSVConPipe(texto);
         } else {
           throw new Error('No se encontró el archivo ' + ARCHIVO_PENDIENTES);
         }
@@ -265,6 +269,44 @@
       } catch (err) {
         console.error(err);
         document.getElementById('infoContador').textContent = 'Error al cargar datos automáticos (' + err.message + '). Cargue archivos manualmente.';
+      }
+    }
+
+    function parsearCSVConPipe(contenido) {
+      if (!contenido) return;
+      const lineas = contenido.split(/\r?\n/);
+      if (lineas.length < 2) return;
+
+      // La primera fila se omite; las cabeceras comienzan en la segunda fila (índice 1)
+      const cabeceras = lineas[1].split('|').map(c => limpiarEspacios(c));
+      datosPendientes = [];
+
+      for (let i = 2; i < lineas.length; i++) {
+        const linea = lineas[i];
+        if (!linea || !linea.trim()) continue;
+
+        const valores = linea.split('|');
+        if (valores.length < 2) continue;
+
+        const fila = {};
+        cabeceras.forEach((col, idx) => {
+          if (col) {
+            fila[col] = valores[idx] !== undefined ? limpiarEspacios(valores[idx]) : '';
+          }
+        });
+
+        const diffOrig = Math.abs(parseFloat(obtenerValorColumna(fila, ['Diferencia', 'Diferencia Real', 'Cant. Pendiente'])) || 0);
+        fila['Diferencia'] = Math.abs(Math.round(diffOrig));
+        fila['_CantOriginal'] = Math.abs(Math.round(diffOrig));
+
+        fila['Inventario Disponible en el punto de origen'] = 0;
+        fila['Inventario BODEGA PENDIENTES NEPS'] = 0;
+        fila['Inventario BODEGA PRINCIPAL CEDI'] = 0;
+        fila['Fecha Subsanación'] = '';
+        fila['Entrega Efectiva'] = '';
+        fila['Estado Final Mennar'] = 'Pendiente Activo';
+
+        datosPendientes.push(fila);
       }
     }
 
@@ -321,11 +363,6 @@
             row['Fecha Subsanación'] = ajuste.fechaSubsanacion || ajuste.fecha || '';
             row['Entrega Efectiva'] = ajuste.fechaEntregaEfectiva || '';
           }
-        } else {
-          if ((row['Estado Final Mennar'] || 'Pendiente Activo') === 'Pendiente Activo') {
-            row['Fecha Subsanación'] = '';
-            row['Entrega Efectiva'] = '';
-          }
         }
       }
     }
@@ -335,46 +372,6 @@
         const local = localStorage.getItem(CHANGES_KEY);
         if (local) aplicarMapaAjustes(JSON.parse(local));
       } catch (e) {}
-    }
-
-    function parsearMatrizDirecta(matriz) {
-      if (!matriz || matriz.length === 0) return;
-
-      let headerIdx = 0;
-      for (let i = 0; i < Math.min(10, matriz.length); i++) {
-        if (!matriz[i]) continue;
-        const lineStr = norm(matriz[i].join(''));
-        if (lineStr.includes('bodega') || lineStr.includes('codigo') || lineStr.includes('documento')) {
-          headerIdx = i;
-          break;
-        }
-      }
-
-      const cabecerasOriginales = matriz[headerIdx].map(c => String(c).trim()).filter(Boolean);
-      datosPendientes = [];
-
-      for (let i = headerIdx + 1; i < matriz.length; i++) {
-        const rowArr = matriz[i];
-        if (!rowArr || rowArr.length <= 1) continue;
-        
-        const fila = {};
-        cabecerasOriginales.forEach((colNombre, idx) => {
-          fila[colNombre] = rowArr[idx] !== undefined ? String(rowArr[idx]).trim() : '';
-        });
-
-        const diffOrig = Math.abs(parseFloat(obtenerValorColumna(fila, ['Diferencia', 'Diferencia Real', 'Cant. Pendiente'])) || 0);
-        fila['Diferencia'] = Math.abs(Math.round(diffOrig));
-        fila['_CantOriginal'] = Math.abs(Math.round(diffOrig));
-        
-        fila['Inventario Disponible en el punto de origen'] = 0;
-        fila['Inventario BODEGA PENDIENTES NEPS'] = 0;
-        fila['Inventario BODEGA PRINCIPAL CEDI'] = 0;
-        fila['Fecha Subsanación'] = '';
-        fila['Entrega Efectiva'] = '';
-        fila['Estado Final Mennar'] = 'Pendiente Activo';
-
-        datosPendientes.push(fila);
-      }
     }
 
     function procesarMatrizInventarioFast(matriz) {
@@ -466,28 +463,25 @@
     function cargarArchivoManualmente() {
       const input = document.getElementById('csvFileInput');
       const file = input.files[0];
-      if (!file) return;
+      if (!file) return alert('Por favor selecciona un archivo.');
 
-      document.getElementById('infoContador').textContent = 'Procesando archivo...';
+      document.getElementById('infoContador').textContent = 'Procesando archivo Pipe...';
       const reader = new FileReader();
 
       reader.onload = e => {
-        const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
-        const matriz = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '' });
-        parsearMatrizDirecta(matriz);
+        parsearCSVConPipe(e.target.result);
         reaplicarSubsanacionesLocal();
         sincronizarDesdeNubeSilencioso();
         poblarSelectoresFiltro();
         aplicarFiltros();
       };
-      reader.readAsArrayBuffer(file);
+      reader.readAsText(file);
     }
 
     function cargarInventarioManualmente() {
       const input = document.getElementById('csvInvInput');
       const file = input.files[0];
       if (!file) return alert('Por favor selecciona un archivo de inventario.');
-      if (!datosPendientes.length) return alert('Carga primero el archivo de Pendientes.');
 
       document.getElementById('infoContador').textContent = 'Cruzando Inventario...';
       const reader = new FileReader();
@@ -497,7 +491,7 @@
         const matriz = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '' });
         procesarMatrizInventarioFast(matriz);
         aplicarFiltros();
-        alert('Stock cargado y cruzado exitosamente.');
+        alert('Stock cargado exitosamente.');
       };
       reader.readAsArrayBuffer(file);
     }
@@ -604,7 +598,7 @@
       paginaDatos.forEach(row => {
         const indexOriginal = datosPendientes.indexOf(row);
         const cantidadPendiente = Math.abs(parseInt(obtenerValorColumna(row, ['Diferencia Real', 'Diferencia', 'Cant. Pendiente'])) || 0);
-        const cuotaRecaudo = obtenerValorColumna(row, ['Cuota Recaudo']) || '0';
+        const cuotaRecaudo = obtenerValorColumna(row, ['Cuota Recaudo', 'Cuota Recaudo Contrato']) || '0';
         const estadoFinal = row['Estado Final Mennar'] || 'Pendiente Activo';
 
         let badgeClass = 'badge-pending';
@@ -612,16 +606,8 @@
         else if (estadoFinal === 'Pendiente Parcial') badgeClass = 'badge-partial';
 
         let fechaOrigen = (obtenerValorColumna(row, ['Fecha Origen Dispensacion', 'Fecha Origen']) || '').split(' ')[0];
-        let fechaSubsanacion = '-';
-        let entregaEfectiva = '-';
-
-        if (estadoFinal !== 'Pendiente Activo') {
-          fechaSubsanacion = row['Fecha Subsanación'] || '-';
-          entregaEfectiva = row['Entrega Efectiva'] || '-';
-        } else {
-          row['Fecha Subsanación'] = '';
-          row['Entrega Efectiva'] = '';
-        }
+        let fechaSubsanacion = estadoFinal !== 'Pendiente Activo' ? (row['Fecha Subsanación'] || '-') : '-';
+        let entregaEfectiva = estadoFinal !== 'Pendiente Activo' ? (row['Entrega Efectiva'] || '-') : '-';
 
         const stockOrigenNum = parseFloat(row['Inventario Disponible en el punto de origen'] || 0);
         const claseStockOrigen = stockOrigenNum > 0 ? 'stock-rojo' : '';
@@ -704,27 +690,6 @@
       });
 
       const totalDispensasCount = listaDispensasPunto.length;
-
-      let dispensasCubiertas = 0;
-      let acumulado = 0;
-      for (let i = 0; i < listaDispensasPunto.length; i++) {
-        if (acumulado + listaDispensasPunto[i] <= stockDisponible) {
-          acumulado += listaDispensasPunto[i];
-          dispensasCubiertas++;
-        } else {
-          break;
-        }
-      }
-
-      let diagnosticoCobertura = "";
-      if (stockDisponible >= sumaTotalPendientesPunto) {
-        diagnosticoCobertura = `✅ CUBRES LA TOTALIDAD (${sumaTotalPendientesPunto} un.). Tu stock de ${stockDisponible} un. alcanza para pagar TODAS las ${totalDispensasCount} dispensas pendientes de este código en este punto.`;
-      } else if (stockDisponible > 0) {
-        diagnosticoCobertura = `⚠️ COBERTURA PARCIAL. Como tienes ${totalDispensasCount} dispensas que te suman ${sumaTotalPendientesPunto} un. y tu inventario es de ${stockDisponible} un., debes pagar ${dispensasCubiertas} dispensas completas.`;
-      } else {
-        diagnosticoCobertura = `❌ SIN STOCK. Tu inventario es 0 un. No puedes cubrir las ${totalDispensasCount} dispensas pendientes (${sumaTotalPendientesPunto} un. requeridas).`;
-      }
-
       const cantidadSugerida = Math.min(pendienteFilaActual, stockDisponible);
 
       const entrada = prompt(
@@ -732,12 +697,11 @@
         `Punto: ${bodegaPunto} | Código: ${codigoArt}\n` +
         `Medicamento: ${descripcion}\n` +
         `--------------------------------------------------\n` +
-        `• TOTAL PENDIENTES CÓDIGO EN ESTE PUNTO: ${sumaTotalPendientesPunto} un. (${totalDispensasCount} dispensas)\n` +
+        `• TOTAL PENDIENTES EN ESTE PUNTO: ${sumaTotalPendientesPunto} un. (${totalDispensasCount} recetas)\n` +
         `• INVENTARIO DISPONIBLE: ${stockDisponible} un.\n` +
-        `• DIAGNÓSTICO: ${diagnosticoCobertura}\n` +
         `--------------------------------------------------\n` +
-        `• Pendiente de ESTE Paciente / Registro: ${pendienteFilaActual} un.\n\n` +
-        `Ingrese Cantidad a Subsanar para esta receta (sugerido: ${cantidadSugerida}):`,
+        `• Pendiente de ESTE Paciente: ${pendienteFilaActual} un.\n\n` +
+        `Ingrese Cantidad a Subsanar (sugerido: ${cantidadSugerida}):`,
         cantidadSugerida
       );
 
@@ -763,17 +727,8 @@
         }
 
         const fechaPrev = item['Entrega Efectiva'] || '';
-        let inputFecha = prompt(`[OPCIONAL] Ingrese Fecha de Entrega Efectiva (AAAA-MM-DD).\nO pulse Aceptar/Enter para dejar en blanco:`, fechaPrev);
-        
-        let fechaEfectiva = "";
-        if (inputFecha !== null && inputFecha.trim() !== "") {
-          const fechaParsed = Date.parse(inputFecha.trim());
-          if (!isNaN(fechaParsed)) {
-            fechaEfectiva = inputFecha.trim();
-          } else {
-            alert('Formato de fecha no reconocido. Se dejará la fecha de entrega en blanco.');
-          }
-        }
+        let inputFecha = prompt(`[OPCIONAL] Ingrese Fecha de Entrega Efectiva (AAAA-MM-DD):`, fechaPrev);
+        let fechaEfectiva = (inputFecha !== null) ? inputFecha.trim() : "";
 
         const saldo = Math.max(0, cantOriginal - cantidadIngresada);
         item['Diferencia Real'] = saldo;
@@ -786,13 +741,10 @@
         item['Estado Final Mennar'] = estadoFinal;
         item['Entrega Efectiva'] = fechaEfectiva;
 
-        const mesCalculado = obtenerMesDeFila(item);
-        const clienteVal = obtenerValorColumna(item, ['Razon Social Cliente', 'Cliente']);
-
         const payload = {
           idUnico, doc,
-          mes: mesCalculado,
-          cliente: clienteVal,
+          mes: obtenerMesDeFila(item),
+          cliente: obtenerValorColumna(item, ['Razon Social Cliente', 'Cliente']),
           bodega: bodegaPunto,
           siglaCliente: obtenerValorColumna(item, ['Sigla Comercial Cliente']),
           cedula: obtenerValorColumna(item, ['Cedula Paciente']),
@@ -801,21 +753,11 @@
           codArt: codigoArt,
           codContrato: obtenerValorColumna(item, ['Codigo Contrato', 'Contrato']),
           cantEntregada: cantidadIngresada,
-          cuotaRecaudo: obtenerValorColumna(item, ['Cuota Recaudo']) || '0',
+          cuotaRecaudo: obtenerValorColumna(item, ['Cuota Recaudo', 'Cuota Recaudo Contrato']) || '0',
           fechaSubsanacion: fechaRegistroSys,
           fechaEntregaEfectiva: fechaEfectiva,
           est: estadoFinal, 
-          accion: 'guardar',
-          
-          generadoPor: 'Sistema_App',
-          actualizadoPor: 'Sistema_App',
-          tipoDispensa: obtenerValorColumna(item, ['Tipo Servicio']) || 'POS',
-          presentacion: obtenerValorColumna(item, ['Presentacion']),
-          grupo: obtenerValorColumna(item, ['Grupo']),
-          cie10: obtenerValorColumna(item, ['DESCRIPCION CIE 10', 'CODIGO CIE 10']),
-          cohorte: obtenerValorColumna(item, ['COHORTE']),
-          tipoContrato: obtenerValorColumna(item, ['Contrato']),
-          prefijoSede: doc.substring(0, 3)
+          accion: 'guardar'
         };
 
         cambiosExistentes[idUnico] = payload;
@@ -840,10 +782,10 @@
       const dataset = soloFiltrados ? datosFiltrados : datosPendientes;
       if (!dataset.length) return alert('No hay datos para exportar.');
 
-      let csvText = COLUMNAS_SOLICITADAS.join(';') + '\n';
+      let csvText = COLUMNAS_DESCARGA.join(';') + '\n';
       
       dataset.forEach(row => {
-        const filaFormateada = COLUMNAS_SOLICITADAS.map(col => {
+        const filaFormateada = COLUMNAS_DESCARGA.map(col => {
           let val = obtenerValorColumna(row, [col]);
           
           if (col === 'Inventario Disponible en el punto de origen') val = row['Inventario Disponible en el punto de origen'] || 0;
@@ -851,6 +793,7 @@
           if (col === 'Inventario BODEGA PRINCIPAL CEDI') val = row['Inventario BODEGA PRINCIPAL CEDI'] || 0;
           if (col === 'Fecha Subsanación') val = row['Fecha Subsanación'] || '';
           if (col === 'Entrega Efectiva') val = row['Entrega Efectiva'] || '';
+          if (col === 'Estado Final Mennar') val = row['Estado Final Mennar'] || 'Pendiente Activo';
           if (col === 'Diferencia') val = row['Diferencia'] !== undefined ? row['Diferencia'] : obtenerValorColumna(row, ['Diferencia Real']);
 
           return `"${(val !== undefined && val !== null ? val : '').toString().replace(/"/g, '""')}"`;
@@ -861,7 +804,7 @@
       const blob = new Blob(['\uFEFF' + csvText], { type: 'text/csv;charset=utf-8;' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = `Total_Dispensacion_Pendientes_32_Campos_${Date.now()}.csv`;
+      a.download = `Pendientes_Filtrados_Export_${Date.now()}.csv`;
       a.click();
     }
 
